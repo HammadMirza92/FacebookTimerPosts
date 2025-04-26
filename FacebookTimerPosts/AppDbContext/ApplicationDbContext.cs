@@ -17,6 +17,7 @@ namespace FacebookTimerPosts.AppDbContext
         public DbSet<Post> Posts { get; set; }
         public DbSet<CountdownTimer> CountdownTimers { get; set; }
         public DbSet<PaymentResult> PaymentResults { get; set; }
+        public DbSet<User> Users { get; set; }
 
         protected override void OnModelCreating(ModelBuilder builder)
         {

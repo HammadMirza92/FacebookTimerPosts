@@ -1,4 +1,6 @@
-﻿namespace FacebookTimerPosts.Models
+﻿using FacebookTimerPosts.Enums;
+
+namespace FacebookTimerPosts.Models
 {
     public class PaymentResult
     {
