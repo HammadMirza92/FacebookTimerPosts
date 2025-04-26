@@ -1,20 +1,27 @@
 ﻿using FacebookTimerPosts.Enums;
+using Microsoft.AspNetCore.Identity;
 using Microsoft.Extensions.Hosting;
 
 namespace FacebookTimerPosts.Models
 {
-    public class User
+    public class User : IdentityUser
     {
-        public int Id { get; set; }
-        public string Username { get; set; }
-        public string Email { get; set; }
-        public string PasswordHash { get; set; }
-        public string PasswordSalt { get; set; }
-        public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
-        public DateTime LastActive { get; set; } = DateTime.UtcNow;
-        public SubscriptionType SubscriptionType { get; set; } = SubscriptionType.Free;
-        public DateTime? SubscriptionEndDate { get; set; }
-        public ICollection<FacebookPage> LinkedPages { get; set; } = new List<FacebookPage>();
-        public ICollection<Post> Posts { get; set; } = new List<Post>();
+        public string FirstName { get; set; }
+        public string LastName { get; set; }
+        public DateTime RegistrationDate { get; set; }
+        public DateTime? LastLoginDate { get; set; }
+        public bool IsActive { get; set; }
+        public virtual ICollection<UserSubscription> UserSubscriptions { get; set; }
+        public virtual ICollection<FacebookPage> FacebookPages { get; set; }
+        public virtual ICollection<Post> Posts { get; set; }
+
+        public User()
+        {
+            UserSubscriptions = new HashSet<UserSubscription>();
+            FacebookPages = new HashSet<FacebookPage>();
+            Posts = new HashSet<Post>();
+            RegistrationDate = DateTime.UtcNow;
+            IsActive = true;
+        }
     }
 }

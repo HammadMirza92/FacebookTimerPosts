@@ -9,54 +9,88 @@ namespace FacebookTimerPosts.Services.Repository
 {
     public class PostRepository : Repository<Post>, IPostRepository
     {
-        public PostRepository(ApplicationDbContext context) : base(context) { }
+        private readonly ApplicationDbContext _db;
 
-        public async Task<IEnumerable<Post>> GetUserPostsAsync(int userId)
+        public PostRepository(ApplicationDbContext db) : base(db)
         {
-            return await _context.Posts
+            _db = db;
+        }
+
+        public async Task<int> CountUserActivePosts(string userId)
+        {
+            return await _db.Posts
+                .CountAsync(p => p.UserId == userId &&
+                           (p.Status == PostStatus.Draft || p.Status == PostStatus.Scheduled || p.Status == PostStatus.Published));
+        }
+
+        public async Task<IList<Post>> GetPagePostsAsync(int facebookPageId, string userId)
+        {
+            return await _db.Posts
+                .Include(p => p.Template)
+                .Include(p => p.FacebookPage)
+                .Where(p => p.FacebookPageId == facebookPageId && p.UserId == userId)
+                .OrderByDescending(p => p.CreatedAt)
+                .ToListAsync();
+        }
+
+        public async Task<IList<Post>> GetScheduledPostsForPublishingAsync()
+        {
+            var now = DateTime.UtcNow;
+
+            return await _db.Posts
                 .Include(p => p.FacebookPage)
                 .Include(p => p.Template)
+                .Where(p => p.Status == PostStatus.Scheduled &&
+                           p.ScheduledFor.HasValue &&
+                           p.ScheduledFor.Value <= now)
+                .ToListAsync();
+        }
+
+        public async Task<Post> GetUserPostByIdAsync(int id, string userId)
+        {
+            return await _db.Posts
+                .Include(p => p.Template)
+                .Include(p => p.FacebookPage)
+                .FirstOrDefaultAsync(p => p.Id == id && p.UserId == userId);
+        }
+
+        public async Task<IList<Post>> GetUserPostsAsync(string userId)
+        {
+            return await _db.Posts
+                .Include(p => p.Template)
+                .Include(p => p.FacebookPage)
                 .Where(p => p.UserId == userId)
                 .OrderByDescending(p => p.CreatedAt)
                 .ToListAsync();
         }
 
-        public async Task<IEnumerable<Post>> GetPagePostsAsync(int pageId)
+        public async Task<bool> PostBelongsToUserAsync(int postId, string userId)
         {
-            return await _context.Posts
-                .Include(p => p.Template)
-                .Where(p => p.FacebookPageId == pageId)
-                .OrderByDescending(p => p.CreatedAt)
-                .ToListAsync();
+            return await _db.Posts
+                .AnyAsync(p => p.Id == postId && p.UserId == userId);
         }
 
-        public async Task<Post> GetPostWithDetailsAsync(int postId)
+        public async Task UpdatePostStatusAsync(int postId, PostStatus status, string facebookPostId = null)
         {
-            return await _context.Posts
-                .Include(p => p.FacebookPage)
-                .Include(p => p.Template)
-                .FirstOrDefaultAsync(p => p.Id == postId);
-        }
+            var post = await _db.Posts.FindAsync(postId);
+            if (post != null)
+            {
+                post.Status = status;
+                post.UpdatedAt = DateTime.UtcNow;
 
-        public async Task<IEnumerable<Post>> GetActiveCountdownsAsync()
-        {
-            return await _context.Posts
-                .Where(p => p.Status == PostStatus.Published && p.TargetDate > DateTime.UtcNow)
-                .ToListAsync();
-        }
+                if (status == PostStatus.Published)
+                {
+                    post.PublishedAt = DateTime.UtcNow;
 
-        public async Task<int> GetUserPostCountForTodayAsync(int userId)
-        {
-            return await _context.Posts
-                .CountAsync(p => p.UserId == userId &&
-                          p.CreatedAt.Date == DateTime.UtcNow.Date);
-        }
+                    if (!string.IsNullOrEmpty(facebookPostId))
+                    {
+                        post.FacebookPostId = facebookPostId;
+                    }
+                }
 
-        public async Task<Post> GetPostByCountdownUrlAsync(string urlSegment)
-        {
-            return await _context.Posts
-                .Include(p => p.Template)
-                .FirstOrDefaultAsync(p => p.CountdownUrl.EndsWith(urlSegment));
+                _db.Posts.Update(post);
+                await _db.SaveChangesAsync();
+            }
         }
     }
 }

@@ -75,5 +75,5 @@ app.UseAuthorization();
 
 app.MapControllers();
 // Seed the database
-await Seed.SeedDatabase(app);
+//await Seed.SeedDatabase(app);
 app.Run();

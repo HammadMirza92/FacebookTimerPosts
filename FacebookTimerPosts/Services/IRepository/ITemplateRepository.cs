@@ -6,7 +6,8 @@ namespace FacebookTimerPosts.Services.IRepository
 {
     public interface ITemplateRepository : IRepository<Template>
     {
-        Task<IEnumerable<Template>> GetTemplatesBySubscriptionTypeAsync(SubscriptionType subscriptionType);
-        Task<IEnumerable<Template>> GetTemplatesByCategoryAsync(TemplateCategory category);
+        Task<IList<Template>> GetTemplatesForUserAsync(string userId, int? subscriptionPlanId);
+        Task<int> CountUserAvailableTemplatesAsync(string userId, int? subscriptionPlanId);
+        Task<bool> IsTemplateAccessibleToUserAsync(int templateId, string userId, int? subscriptionPlanId);
     }
 }

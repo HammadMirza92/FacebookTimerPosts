@@ -1,6 +1,6 @@
 ﻿namespace FacebookTimerPosts.DTOs
 {
-    public class UpdatePostDto
+    public class PostPreviewDto
     {
         public string Title { get; set; }
         public string Description { get; set; }
@@ -13,7 +13,5 @@
         public bool ShowSeconds { get; set; }
         public string BackgroundImageUrl { get; set; }
         public bool HasOverlay { get; set; }
-        public DateTime? ScheduledFor { get; set; }
-        public int RefreshIntervalInMinutes { get; set; }
     }
 }

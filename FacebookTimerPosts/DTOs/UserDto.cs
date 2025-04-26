@@ -2,13 +2,13 @@
 {
     public class UserDto
     {
-        public int Id { get; set; }
-        public string Username { get; set; }
+        public string Id { get; set; }
+        public string FirstName { get; set; }
+        public string LastName { get; set; }
         public string Email { get; set; }
-        public string SubscriptionType { get; set; }
-        public DateTime? SubscriptionEndDate { get; set; }
-        public int DaysUntilExpiration { get; set; }
-        public int LinkedPagesCount { get; set; }
-        public int PostsRemainingToday { get; set; }
+        public DateTime RegistrationDate { get; set; }
+        public DateTime? LastLoginDate { get; set; }
+        public bool IsActive { get; set; }
+        public UserSubscriptionDto CurrentSubscription { get; set; }
     }
 }

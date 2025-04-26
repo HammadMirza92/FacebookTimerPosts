@@ -3,127 +3,68 @@ using FacebookTimerPosts.Enums;
 using FacebookTimerPosts.Models;
 using FacebookTimerPosts.Services.IRepository;
 using FacebookTimerPosts.Services.Repository.Base;
+using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using System.Security.Cryptography;
 using System.Text;
 
 namespace FacebookTimerPosts.Services.Repository
 {
-    public class UserRepository : Repository<User>, IUserRepository
+    public class UserRepository : IUserRepository
     {
-        public UserRepository(ApplicationDbContext context) : base(context) { }
+        private readonly UserManager<User> _userManager;
+        private readonly SignInManager<User> _signInManager;
 
-        public async Task<User> GetUserByUsernameAsync(string username)
+        public UserRepository(UserManager<User> userManager, SignInManager<User> signInManager)
         {
-            return await _context.Users
-                .SingleOrDefaultAsync(u => u.Username == username);
+            _userManager = userManager;
+            _signInManager = signInManager;
         }
 
-        public async Task<User> GetUserWithPagesAsync(int userId)
+        public async Task<bool> CheckPasswordAsync(User user, string password)
         {
-            return await _context.Users
-                .Include(u => u.LinkedPages)
-                .FirstOrDefaultAsync(u => u.Id == userId);
+            return await _userManager.CheckPasswordAsync(user, password);
         }
 
-        public async Task<User> GetUserWithPostsAsync(int userId)
+        public async Task<User> GetUserByEmailAsync(string email)
         {
-            return await _context.Users
-                .Include(u => u.Posts)
-                .FirstOrDefaultAsync(u => u.Id == userId);
+            return await _userManager.FindByEmailAsync(email);
         }
 
-        public async Task<int> GetUserRemainingPostsForTodayAsync(int userId)
+        public async Task<User> GetUserByIdAsync(string id)
         {
-            var user = await _context.Users
-                .FirstOrDefaultAsync(u => u.Id == userId);
-
-            if (user == null) return 0;
-
-            var dailyLimit = user.SubscriptionType switch
-            {
-                SubscriptionType.Free => 3,
-                SubscriptionType.Standard => 10,
-                SubscriptionType.Premium => 20,
-                _ => 0
-            };
-
-            var postsToday = await _context.Posts
-                .CountAsync(p => p.UserId == userId &&
-                            p.CreatedAt.Date == DateTime.UtcNow.Date);
-
-            return Math.Max(0, dailyLimit - postsToday);
+            return await _userManager.FindByIdAsync(id);
         }
 
-        public async Task<bool> UpdateUserSubscriptionAsync(int userId, SubscriptionType type, DateTime endDate)
+        public async Task<IList<string>> GetUserRolesAsync(User user)
         {
-            var user = await _context.Users.FindAsync(userId);
-
-            if (user == null) return false;
-
-            user.SubscriptionType = type;
-            user.SubscriptionEndDate = endDate;
-
-            return await SaveAllAsync();
+            return await _userManager.GetRolesAsync(user);
         }
 
-        public async Task<bool> CheckUserExistsAsync(string username)
+        public async Task<SignInResult> LoginUserAsync(string email, string password)
         {
-            return await _context.Users.AnyAsync(u => u.Username == username);
+            return await _signInManager.PasswordSignInAsync(email, password, false, false);
         }
 
-        public async Task<bool> CheckEmailExistsAsync(string email)
+        public async Task LogoutAsync()
         {
-            return await _context.Users.AnyAsync(u => u.Email == email);
+            await _signInManager.SignOutAsync();
         }
 
-        public async Task<User> AuthenticateAsync(string username, string password)
+        public async Task<IdentityResult> RegisterUserAsync(User user, string password)
         {
-            var user = await _context.Users
-                .SingleOrDefaultAsync(u => u.Username == username);
-
-            if (user == null) return null;
-
-            // Verify password hash
-            if (!VerifyPasswordHash(password, user.PasswordHash, user.PasswordSalt))
-                return null;
-
-            return user;
+            return await _userManager.CreateAsync(user, password);
         }
 
-        public async Task<User> RegisterAsync(string username, string email, string password)
+        public async Task UpdateLastLoginDateAsync(User user)
         {
-            CreatePasswordHash(password, out string passwordHash, out string passwordSalt);
-
-            var user = new User
-            {
-                Username = username,
-                Email = email,
-                PasswordHash = passwordHash,
-                PasswordSalt = passwordSalt
-            };
-
-            await _context.Users.AddAsync(user);
-            await _context.SaveChangesAsync();
-
-            return user;
+            user.LastLoginDate = DateTime.UtcNow;
+            await _userManager.UpdateAsync(user);
         }
 
-        private bool VerifyPasswordHash(string password, string storedHash, string storedSalt)
+        public async Task<bool> UserExistsAsync(string email)
         {
-            using var hmac = new HMACSHA512(Convert.FromBase64String(storedSalt));
-            var computedHash = Convert.ToBase64String(
-                hmac.ComputeHash(Encoding.UTF8.GetBytes(password)));
-
-            return computedHash == storedHash;
-        }
-
-        private void CreatePasswordHash(string password, out string passwordHash, out string passwordSalt)
-        {
-            using var hmac = new HMACSHA512();
-            passwordSalt = Convert.ToBase64String(hmac.Key);
-            passwordHash = Convert.ToBase64String(
-                hmac.ComputeHash(Encoding.UTF8.GetBytes(password)));
+            return await _userManager.FindByEmailAsync(email) != null;
         }
     }
 }

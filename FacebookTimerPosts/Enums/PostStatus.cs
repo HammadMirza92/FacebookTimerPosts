@@ -3,7 +3,9 @@
     public enum PostStatus
     {
         Draft,
+        Scheduled,
         Published,
-        Expired
+        Failed,
+        Cancelled
     }
 }

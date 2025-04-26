@@ -6,12 +6,9 @@ namespace FacebookTimerPosts.Services.IRepository
 {
     public interface IFacebookPageRepository : IRepository<FacebookPage>
     {
-        Task<IEnumerable<FacebookPage>> GetUserPagesAsync(int userId);
-        Task<FacebookPage> GetPageWithPostsAsync(int pageId);
-        Task<bool> LinkPageToUserAsync(FacebookPage page, int userId);
-        Task<bool> UnlinkPageFromUserAsync(int pageId, int userId);
-        Task<FacebookPage> GetPageByFacebookIdAsync(string facebookPageId);
-        Task<PageDetails> GetPageDetailsAsync(string pageId, string accessToken);
-        Task<string> CreatePostAsync(string pageId, string accessToken, string message);
+        Task<IList<FacebookPage>> GetUserPagesAsync(string userId);
+        Task<FacebookPage> GetUserPageByIdAsync(int id, string userId);
+        Task<FacebookPage> LinkFacebookPageAsync(string userId, string pageId, string pageName, string accessToken, DateTime expiryDate);
+        Task<bool> PageBelongsToUserAsync(int pageId, string userId);
     }
 }

@@ -1,19 +1,20 @@
 ﻿using FacebookTimerPosts.Enums;
 using FacebookTimerPosts.Models;
 using FacebookTimerPosts.Services.IRepository.Base;
+using Microsoft.AspNetCore.Identity;
 
 namespace FacebookTimerPosts.Services.IRepository
 {
-    public interface IUserRepository : IRepository<User>
+    public interface IUserRepository
     {
-        Task<User> GetUserByUsernameAsync(string username);
-        Task<User> GetUserWithPagesAsync(int userId);
-        Task<User> GetUserWithPostsAsync(int userId);
-        Task<int> GetUserRemainingPostsForTodayAsync(int userId);
-        Task<bool> UpdateUserSubscriptionAsync(int userId, SubscriptionType type, DateTime endDate);
-        Task<bool> CheckUserExistsAsync(string username);
-        Task<bool> CheckEmailExistsAsync(string email);
-        Task<User> AuthenticateAsync(string username, string password);
-        Task<User> RegisterAsync(string username, string email, string password);
+        Task<User> GetUserByIdAsync(string id);
+        Task<User> GetUserByEmailAsync(string email);
+        Task<IdentityResult> RegisterUserAsync(User user, string password);
+        Task<SignInResult> LoginUserAsync(string email, string password);
+        Task<bool> CheckPasswordAsync(User user, string password);
+        Task<bool> UserExistsAsync(string email);
+        Task<IList<string>> GetUserRolesAsync(User user);
+        Task LogoutAsync();
+        Task UpdateLastLoginDateAsync(User user);
     }
 }
