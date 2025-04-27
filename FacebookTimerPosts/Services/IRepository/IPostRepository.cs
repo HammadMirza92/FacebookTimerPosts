@@ -13,5 +13,8 @@ namespace FacebookTimerPosts.Services.IRepository
         Task<int> CountUserActivePosts(string userId);
         Task UpdatePostStatusAsync(int postId, PostStatus status, string facebookPostId = null);
         Task<bool> PostBelongsToUserAsync(int postId, string userId);
+        Task<IList<Post>> GetDueScheduledPosts(DateTime now);
+        Task<IList<Post>> GetPostsDueForRefresh(DateTime now);
+        Task UpdatePostRefreshAsync(int id, string newFacebookPostId, DateTime nextRefreshTime);
     }
 }

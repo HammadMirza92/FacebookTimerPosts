@@ -1,5 +1,4 @@
 ﻿using FacebookTimerPosts.Enums;
-using FacebookTimerPosts.Models;
 using FacebookTimerPosts.Services.IRepository;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -7,13 +6,13 @@ using Microsoft.Extensions.Logging;
 
 namespace FacebookTimerPosts.Services
 {
-    public class ScheduledTaskService : BackgroundService
+    public class PostRefreshService : BackgroundService
     {
-        private readonly ILogger<ScheduledTaskService> _logger;
+        private readonly ILogger<PostRefreshService> _logger;
         private readonly IServiceProvider _serviceProvider;
         private Timer? _timer;
 
-        public ScheduledTaskService(ILogger<ScheduledTaskService> logger, IServiceProvider serviceProvider)
+        public PostRefreshService(ILogger<PostRefreshService> logger, IServiceProvider serviceProvider)
         {
             _logger = logger;
             _serviceProvider = serviceProvider;
@@ -21,17 +20,17 @@ namespace FacebookTimerPosts.Services
 
         protected override Task ExecuteAsync(CancellationToken stoppingToken)
         {
-            _logger.LogInformation("Scheduled Task Service running.");
+            _logger.LogInformation("Post Refresh Service running.");
 
             _timer = new Timer(DoWork, null, TimeSpan.Zero,
-                TimeSpan.FromMinutes(1));
+                TimeSpan.FromMinutes(5)); // Check every 5 minutes
 
             return Task.CompletedTask;
         }
 
         private async void DoWork(object? state)
         {
-            _logger.LogInformation("Scheduled Task Service is working.");
+            _logger.LogInformation("Post Refresh Service is working.");
 
             try
             {
@@ -42,14 +41,21 @@ namespace FacebookTimerPosts.Services
                     var countdownTimerRepository = scope.ServiceProvider.GetRequiredService<ICountdownTimerRepository>();
 
                     var now = DateTime.UtcNow;
-                    var scheduledPosts = await postRepository.GetDueScheduledPosts(now);
+                    var postsToRefresh = await postRepository.GetPostsDueForRefresh(now);
 
-                    _logger.LogInformation("Found {Count} posts due for publishing", scheduledPosts.Count);
+                    _logger.LogInformation("Found {Count} posts due for refresh", postsToRefresh.Count);
 
-                    foreach (var post in scheduledPosts)
+                    foreach (var post in postsToRefresh)
                     {
                         try
                         {
+                            // Check if post is still valid for refresh (event hasn't passed yet)
+                            if (post.EventDateTime <= now)
+                            {
+                                _logger.LogInformation("Post {PostId} event has passed, skipping refresh", post.Id);
+                                continue;
+                            }
+
                             // Get countdown image URL
                             var countdownTimer = await countdownTimerRepository.GetByPostIdAsync(post.Id);
                             if (countdownTimer == null)
@@ -60,30 +66,35 @@ namespace FacebookTimerPosts.Services
 
                             var imageUrl = $"{GetBaseUrl()}/api/countdown/{countdownTimer.PublicId}/image";
 
-                            // Call Facebook service to publish the post
+                            // Call Facebook service to publish the post (it will replace the existing one)
                             var result = await facebookService.PublishPostAsync(post, imageUrl);
 
                             if (result.Success)
                             {
-                                // Update post in database
-                                await postRepository.UpdatePostStatusAsync(post.Id, PostStatus.Published, result.PostId);
-                                _logger.LogInformation("Successfully published post {PostId} to Facebook", post.Id);
+                                // Calculate next refresh time
+                                var nextRefreshTime = now.AddMinutes(post.RefreshIntervalInMinutes.Value);
+
+                                // Update post in database with new Facebook post ID and next refresh time
+                                await postRepository.UpdatePostRefreshAsync(post.Id, result.PostId, nextRefreshTime);
+
+                                _logger.LogInformation("Successfully refreshed post {PostId}, next refresh at {NextRefresh}",
+                                    post.Id, nextRefreshTime);
                             }
                             else
                             {
-                                _logger.LogError("Failed to publish post {PostId} to Facebook: {ErrorMessage}", post.Id, result.ErrorMessage);
+                                _logger.LogError("Failed to refresh post {PostId}: {ErrorMessage}", post.Id, result.ErrorMessage);
                             }
                         }
                         catch (Exception ex)
                         {
-                            _logger.LogError(ex, "Error publishing post {PostId}", post.Id);
+                            _logger.LogError(ex, "Error refreshing post {PostId}", post.Id);
                         }
                     }
                 }
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error in scheduled task service");
+                _logger.LogError(ex, "Error in post refresh service");
             }
         }
 
@@ -95,7 +106,7 @@ namespace FacebookTimerPosts.Services
 
         public override Task StopAsync(CancellationToken stoppingToken)
         {
-            _logger.LogInformation("Scheduled Task Service is stopping.");
+            _logger.LogInformation("Post Refresh Service is stopping.");
 
             _timer?.Change(Timeout.Infinite, 0);
 

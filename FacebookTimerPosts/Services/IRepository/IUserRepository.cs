@@ -1,4 +1,5 @@
-﻿using FacebookTimerPosts.Enums;
+﻿using FacebookTimerPosts.DTOs;
+using FacebookTimerPosts.Enums;
 using FacebookTimerPosts.Models;
 using FacebookTimerPosts.Services.IRepository.Base;
 using Microsoft.AspNetCore.Identity;
@@ -16,5 +17,9 @@ namespace FacebookTimerPosts.Services.IRepository
         Task<IList<string>> GetUserRolesAsync(User user);
         Task LogoutAsync();
         Task UpdateLastLoginDateAsync(User user);
+
+        // Add these new methods for external authentication
+        Task<ExternalAuthResponseDto> ExternalLoginAsync(ExternalAuthDto externalAuth);
+
     }
 }

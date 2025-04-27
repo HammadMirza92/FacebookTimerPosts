@@ -1,6 +1,7 @@
 ﻿using FacebookTimerPosts.DTOs;
 using FacebookTimerPosts.Enums;
 using FacebookTimerPosts.Models;
+using FacebookTimerPosts.Services;
 using FacebookTimerPosts.Services.IRepository;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -18,6 +19,7 @@ namespace FacebookTimerPosts.Controllers
         private readonly ITemplateRepository _templateRepository;
         private readonly ICountdownTimerRepository _countdownTimerRepository;
         private readonly IUserSubscriptionRepository _userSubscriptionRepository;
+        private readonly IFacebookService _facebookService;
         private readonly ILogger<PostController> _logger;
 
         public PostController(
@@ -26,6 +28,7 @@ namespace FacebookTimerPosts.Controllers
             ITemplateRepository templateRepository,
             ICountdownTimerRepository countdownTimerRepository,
             IUserSubscriptionRepository userSubscriptionRepository,
+            IFacebookService facebookService,
             ILogger<PostController> logger)
         {
             _postRepository = postRepository;
@@ -33,6 +36,7 @@ namespace FacebookTimerPosts.Controllers
             _templateRepository = templateRepository;
             _countdownTimerRepository = countdownTimerRepository;
             _userSubscriptionRepository = userSubscriptionRepository;
+            _facebookService = facebookService;
             _logger = logger;
         }
 
@@ -50,7 +54,7 @@ namespace FacebookTimerPosts.Controllers
                 postsDto.Add(new PostDto
                 {
                     Id = post.Id,
-                    FacebookPageId = post.FacebookPageId,
+                    FacebookPageId = (int)post.FacebookPageId,
                     FacebookPageName = post.FacebookPage.PageName,
                     TemplateId = post.TemplateId,
                     TemplateName = post.Template.Name,
@@ -100,7 +104,7 @@ namespace FacebookTimerPosts.Controllers
                 postsDto.Add(new PostDto
                 {
                     Id = post.Id,
-                    FacebookPageId = post.FacebookPageId,
+                    FacebookPageId = (int)post.FacebookPageId,
                     FacebookPageName = post.FacebookPage.PageName,
                     TemplateId = post.TemplateId,
                     TemplateName = post.Template.Name,
@@ -145,7 +149,7 @@ namespace FacebookTimerPosts.Controllers
             var postDto = new PostDto
             {
                 Id = post.Id,
-                FacebookPageId = post.FacebookPageId,
+                FacebookPageId = (int)post.FacebookPageId,
                 FacebookPageName = post.FacebookPage.PageName,
                 TemplateId = post.TemplateId,
                 TemplateName = post.Template.Name,
@@ -195,7 +199,7 @@ namespace FacebookTimerPosts.Controllers
 
             // Check posts limit based on subscription
             var postsCount = await _postRepository.CountUserActivePosts(userId);
-            var maxPosts = userSubscription != null ? userSubscription.SubscriptionPlan.MaxPosts : 1; // Free tier limit
+            var maxPosts = userSubscription != null ? userSubscription.SubscriptionPlan.MaxPosts : 10; // Free tier limit
 
             if (maxPosts > 0 && postsCount >= maxPosts)
             {
@@ -237,7 +241,7 @@ namespace FacebookTimerPosts.Controllers
             var postDto = new PostDto
             {
                 Id = post.Id,
-                FacebookPageId = post.FacebookPageId,
+                FacebookPageId = (int)post.FacebookPageId,
                 TemplateId = post.TemplateId,
                 Title = post.Title,
                 Description = post.Description,
@@ -309,7 +313,7 @@ namespace FacebookTimerPosts.Controllers
             var postDto = new PostDto
             {
                 Id = post.Id,
-                FacebookPageId = post.FacebookPageId,
+                FacebookPageId = (int)post.FacebookPageId,
                 FacebookPageName = post.FacebookPage.PageName,
                 TemplateId = post.TemplateId,
                 TemplateName = post.Template.Name,
@@ -352,20 +356,36 @@ namespace FacebookTimerPosts.Controllers
                 return BadRequest("Only draft posts can be published immediately");
             }
 
-            // In a real application, you would call the Facebook API to publish the post
-            // This is a simplified example where we just update the status
             try
             {
-                // Simulate Facebook API post creation
-                string fakePostId = "facebook_" + Guid.NewGuid().ToString();
+                // Get countdown image URL (you may need to modify this based on your implementation)
+                var countdownTimer = await _countdownTimerRepository.GetByPostIdAsync(post.Id);
+                var imageUrl = $"https://yourdomain.com/api/countdown/{countdownTimer.PublicId}/image";
 
-                await _postRepository.UpdatePostStatusAsync(post.Id, PostStatus.Published, fakePostId);
+                // Call Facebook service to publish the post
+                var result = await _facebookService.PublishPostAsync(post, imageUrl);
 
-                return Ok(new PublishResultDto
+                if (result.Success)
                 {
-                    Success = true,
-                    FacebookPostId = fakePostId
-                });
+                    // Update post in database
+                    await _postRepository.UpdatePostStatusAsync(post.Id, PostStatus.Published, result.PostId);
+
+                    return Ok(new PublishResultDto
+                    {
+                        Success = true,
+                        FacebookPostId = result.PostId
+                    });
+                }
+                else
+                {
+                    _logger.LogError("Failed to publish post to Facebook: {ErrorMessage}", result.ErrorMessage);
+
+                    return StatusCode(500, new PublishResultDto
+                    {
+                        Success = false,
+                        ErrorMessage = result.ErrorMessage
+                    });
+                }
             }
             catch (Exception ex)
             {
@@ -374,7 +394,7 @@ namespace FacebookTimerPosts.Controllers
                 return StatusCode(500, new PublishResultDto
                 {
                     Success = false,
-                    ErrorMessage = "Failed to publish post to Facebook"
+                    ErrorMessage = "An unexpected error occurred while publishing the post"
                 });
             }
         }
@@ -405,10 +425,29 @@ namespace FacebookTimerPosts.Controllers
         public async Task<IActionResult> DeletePost(int id)
         {
             var userId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+            var post = await _postRepository.GetUserPostByIdAsync(id, userId);
 
-            if (!await _postRepository.PostBelongsToUserAsync(id, userId))
+            if (post == null)
             {
                 return NotFound();
+            }
+
+            // If post is published on Facebook, try to delete it there too
+            if (post.Status == PostStatus.Published && !string.IsNullOrEmpty(post.FacebookPostId))
+            {
+                try
+                {
+                    var page = await _facebookPageRepository.GetByIdAsync((int)post.FacebookPageId);
+                    if (page != null)
+                    {
+                        await _facebookService.DeletePostAsync(post.FacebookPostId, page.PageAccessToken);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "Failed to delete post from Facebook, continuing with local deletion");
+                    // Continue with local deletion even if Facebook deletion fails
+                }
             }
 
             await _postRepository.DeleteAsync(id);

@@ -26,7 +26,7 @@ namespace FacebookTimerPosts.DTOs
         public PostStatus Status { get; set; }
         public DateTime? PublishedAt { get; set; }
         public DateTime? ScheduledFor { get; set; }
-        public int RefreshIntervalInMinutes { get; set; }
+        public int? RefreshIntervalInMinutes { get; set; }
         public string CountdownPublicId { get; set; }
     }
 }

@@ -126,7 +126,9 @@ namespace FacebookTimerPosts.Controllers
             {
                 Subject = new ClaimsIdentity(claims),
                 Expires = DateTime.UtcNow.AddDays(1),
-                SigningCredentials = creds
+                SigningCredentials = creds,
+                Issuer = _configuration.GetSection("AppSettings:Issuer").Value,
+                Audience = _configuration.GetSection("AppSettings:Audience").Value
             };
 
             var tokenHandler = new JwtSecurityTokenHandler();
@@ -169,5 +171,23 @@ namespace FacebookTimerPosts.Controllers
                 CurrentSubscription = subscriptionDto
             };
         }
+        [HttpPost("external-login")]
+        public async Task<IActionResult> ExternalLogin([FromBody] ExternalAuthDto externalAuth)
+        {
+            try
+            {
+                var result = await _userRepository.ExternalLoginAsync(externalAuth);
+                return Ok(result);
+            }
+            catch (UnauthorizedAccessException ex)
+            {
+                return Unauthorized(ex.Message);
+            }
+            catch (Exception ex)
+            {
+                return BadRequest(ex.Message);
+            }
+        }
+
     }
 }

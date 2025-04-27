@@ -1,15 +1,14 @@
 using FacebookTimerPosts.AppDbContext;
 using FacebookTimerPosts.Models;
+using FacebookTimerPosts.Services;
 using FacebookTimerPosts.Services.IRepository;
 using FacebookTimerPosts.Services.IRepository.Base;
 using FacebookTimerPosts.Services.Repository;
 using FacebookTimerPosts.Services.Repository.Base;
-using FacebookTimerPosts.Tasks;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
-using Microsoft.VisualStudio.Web.CodeGenerators.Mvc.Templates.Blazor;
 using System.Text;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -62,9 +61,32 @@ builder.Services.AddAuthentication(options =>
         ValidateIssuerSigningKey = true,
         IssuerSigningKey = new SymmetricSecurityKey(Encoding.ASCII.GetBytes(
             builder.Configuration.GetSection("AppSettings:Token").Value)),
-        ValidateIssuer = false,
-        ValidateAudience = false
+        ValidateIssuer = true,
+        ValidIssuer = builder.Configuration.GetSection("AppSettings:Issuer").Value,
+        ValidateAudience = true,
+        ValidAudience = builder.Configuration.GetSection("AppSettings:Audience").Value,
+        ValidateLifetime = true,
     };
+});
+// Add this after your existing authentication configuration
+builder.Services.AddAuthentication()
+    .AddGoogle(options =>
+    {
+        options.ClientId = builder.Configuration["Authentication:Google:ClientId"];
+        options.ClientSecret = builder.Configuration["Authentication:Google:ClientSecret"];
+        options.CallbackPath = "/signin-google";
+    })
+    .AddFacebook(options =>
+    {
+        options.AppId = builder.Configuration["Authentication:Facebook:AppId"];
+        options.AppSecret = builder.Configuration["Authentication:Facebook:AppSecret"];
+        options.CallbackPath = "/signin-facebook";
+    });
+
+// Register HttpClient for Facebook API
+builder.Services.AddHttpClient("FacebookGraph", client =>
+{
+    client.BaseAddress = new Uri("https://graph.facebook.com/v22.0/");
 });
 // Configure CORS
 builder.Services.AddCors(options =>
@@ -77,7 +99,10 @@ builder.Services.AddCors(options =>
               .AllowCredentials();
     });
 });
+
+// Register background services
 builder.Services.AddHostedService<ScheduledTaskService>();
+builder.Services.AddHostedService<PostRefreshService>();
 
 var app = builder.Build();
 
@@ -91,12 +116,10 @@ if (app.Environment.IsDevelopment())
 app.UseHttpsRedirection();
 app.UseCors("AllowAngularApp");
 app.UseAuthentication();
-
 app.UseAuthorization();
 
 app.MapControllers();
-// Seed the database
-//await Seed.SeedDatabase(app);
+
 // Create database and apply migrations if not exists
 using (var scope = app.Services.CreateScope())
 {
@@ -126,4 +149,5 @@ using (var scope = app.Services.CreateScope())
         }
     }
 }
+
 app.Run();

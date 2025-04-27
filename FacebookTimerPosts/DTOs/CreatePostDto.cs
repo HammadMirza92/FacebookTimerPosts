@@ -16,6 +16,6 @@
         public string BackgroundImageUrl { get; set; }
         public bool HasOverlay { get; set; }
         public DateTime? ScheduledFor { get; set; }
-        public int RefreshIntervalInMinutes { get; set; } = 15;
+        public int? RefreshIntervalInMinutes { get; set; } = 60; // Default to hourly refresh
     }
 }

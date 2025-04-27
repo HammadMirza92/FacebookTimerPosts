@@ -36,11 +36,11 @@ namespace FacebookTimerPosts.AppDbContext
                 .HasForeignKey(fp => fp.UserId)
                 .OnDelete(DeleteBehavior.Cascade);
 
-            builder.Entity<User>()
-                .HasMany(u => u.Posts)
-                .WithOne(p => p.User)
-                .HasForeignKey(p => p.UserId)
-                .OnDelete(DeleteBehavior.NoAction);
+            //builder.Entity<User>()
+            //    .HasMany(u => u.Posts)
+            //    .WithOne(p => p.User)
+            //    .HasForeignKey(p => p.UserId)
+            //    .OnDelete(DeleteBehavior.NoAction);
 
             // Configure SubscriptionPlan
             builder.Entity<SubscriptionPlan>()
@@ -68,12 +68,21 @@ namespace FacebookTimerPosts.AppDbContext
                 .HasMany(fp => fp.Posts)
                 .WithOne(p => p.FacebookPage)
                 .HasForeignKey(p => p.FacebookPageId)
-                .OnDelete(DeleteBehavior.Cascade);
+                .OnDelete(DeleteBehavior.Restrict);
 
             // Configure Post
             builder.Entity<Post>()
                 .Property(p => p.Status)
                 .HasConversion<string>();
+
+            // Add configuration for RefreshIntervalInMinutes and NextRefreshTime
+            builder.Entity<Post>()
+                .Property(p => p.RefreshIntervalInMinutes)
+                .IsRequired(false);
+
+            builder.Entity<Post>()
+                .Property(p => p.NextRefreshTime)
+                .IsRequired(false);
 
             // Configure CountdownTimer
             builder.Entity<CountdownTimer>()

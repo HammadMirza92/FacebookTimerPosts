@@ -92,5 +92,42 @@ namespace FacebookTimerPosts.Services.Repository
                 await _db.SaveChangesAsync();
             }
         }
+        public async Task<IList<Post>> GetDueScheduledPosts(DateTime now)
+        {
+            return await _db.Posts
+                .Include(p => p.FacebookPage)
+                .Include(p => p.Template)
+                .Where(p => p.Status == PostStatus.Scheduled &&
+                           p.ScheduledFor.HasValue &&
+                           p.ScheduledFor <= now)
+                .ToListAsync();
+        }
+
+        public async Task<IList<Post>> GetPostsDueForRefresh(DateTime now)
+        {
+            return await _db.Posts
+                .Include(p => p.FacebookPage)
+                .Include(p => p.Template)
+                .Where(p => p.Status == PostStatus.Published &&
+                           p.RefreshIntervalInMinutes > 0 &&
+                           (p.NextRefreshTime == null || p.NextRefreshTime <= now) &&
+                           p.EventDateTime > now)
+                .ToListAsync();
+        }
+
+        public async Task UpdatePostRefreshAsync(int id, string newFacebookPostId, DateTime nextRefreshTime)
+        {
+            var post = await _db.Posts.FindAsync(id);
+
+            if (post != null)
+            {
+                post.FacebookPostId = newFacebookPostId;
+                post.NextRefreshTime = nextRefreshTime;
+                post.UpdatedAt = DateTime.UtcNow;
+
+                _db.Posts.Update(post);
+                await _db.SaveChangesAsync();
+            }
+        }
     }
 }

@@ -12,7 +12,7 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace FacebookTimerPosts.Migrations
 {
     [DbContext(typeof(ApplicationDbContext))]
-    [Migration("20250426100342_init")]
+    [Migration("20250426171453_init")]
     partial class init
     {
         /// <inheritdoc />
@@ -166,33 +166,41 @@ namespace FacebookTimerPosts.Migrations
 
                     b.Property<string>("CustomFontFamily")
                         .IsRequired()
-                        .HasColumnType("nvarchar(max)");
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
 
                     b.Property<string>("CustomPrimaryColor")
                         .IsRequired()
-                        .HasColumnType("nvarchar(max)");
+                        .HasMaxLength(7)
+                        .HasColumnType("nvarchar(7)");
 
                     b.Property<string>("Description")
                         .IsRequired()
-                        .HasColumnType("nvarchar(max)");
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
 
                     b.Property<DateTime>("EventDateTime")
                         .HasColumnType("datetime2");
 
-                    b.Property<int>("FacebookPageId")
+                    b.Property<int?>("FacebookPageId")
+                        .IsRequired()
                         .HasColumnType("int");
 
                     b.Property<string>("FacebookPostId")
                         .IsRequired()
-                        .HasColumnType("nvarchar(max)");
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
 
                     b.Property<bool>("HasOverlay")
                         .HasColumnType("bit");
 
+                    b.Property<DateTime?>("NextRefreshTime")
+                        .HasColumnType("datetime2");
+
                     b.Property<DateTime?>("PublishedAt")
                         .HasColumnType("datetime2");
 
-                    b.Property<int>("RefreshIntervalInMinutes")
+                    b.Property<int?>("RefreshIntervalInMinutes")
                         .HasColumnType("int");
 
                     b.Property<DateTime?>("ScheduledFor")
@@ -219,7 +227,8 @@ namespace FacebookTimerPosts.Migrations
 
                     b.Property<string>("Title")
                         .IsRequired()
-                        .HasColumnType("nvarchar(max)");
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
 
                     b.Property<DateTime?>("UpdatedAt")
                         .HasColumnType("datetime2");
@@ -284,7 +293,7 @@ namespace FacebookTimerPosts.Migrations
                         new
                         {
                             Id = 1,
-                            CreatedAt = new DateTime(2025, 4, 26, 10, 3, 41, 865, DateTimeKind.Utc).AddTicks(9782),
+                            CreatedAt = new DateTime(2025, 4, 26, 17, 14, 51, 931, DateTimeKind.Utc).AddTicks(3924),
                             Description = "Free plan with basic features",
                             DurationInDays = 0,
                             IsActive = true,
@@ -296,7 +305,7 @@ namespace FacebookTimerPosts.Migrations
                         new
                         {
                             Id = 2,
-                            CreatedAt = new DateTime(2025, 4, 26, 10, 3, 41, 865, DateTimeKind.Utc).AddTicks(9790),
+                            CreatedAt = new DateTime(2025, 4, 26, 17, 14, 51, 931, DateTimeKind.Utc).AddTicks(3934),
                             Description = "Professional plan with advanced features",
                             DurationInDays = 30,
                             IsActive = true,
@@ -308,7 +317,7 @@ namespace FacebookTimerPosts.Migrations
                         new
                         {
                             Id = 3,
-                            CreatedAt = new DateTime(2025, 4, 26, 10, 3, 41, 865, DateTimeKind.Utc).AddTicks(9795),
+                            CreatedAt = new DateTime(2025, 4, 26, 17, 14, 51, 931, DateTimeKind.Utc).AddTicks(3940),
                             Description = "Premium plan with all features",
                             DurationInDays = 30,
                             IsActive = true,
@@ -371,7 +380,7 @@ namespace FacebookTimerPosts.Migrations
                         new
                         {
                             Id = 1,
-                            CreatedAt = new DateTime(2025, 4, 26, 10, 3, 41, 866, DateTimeKind.Utc).AddTicks(18),
+                            CreatedAt = new DateTime(2025, 4, 26, 17, 14, 51, 931, DateTimeKind.Utc).AddTicks(4353),
                             DefaultFontFamily = "Arial",
                             Description = "A simple, clean countdown template",
                             IsActive = true,
@@ -382,7 +391,7 @@ namespace FacebookTimerPosts.Migrations
                         new
                         {
                             Id = 2,
-                            CreatedAt = new DateTime(2025, 4, 26, 10, 3, 41, 866, DateTimeKind.Utc).AddTicks(22),
+                            CreatedAt = new DateTime(2025, 4, 26, 17, 14, 51, 931, DateTimeKind.Utc).AddTicks(4424),
                             DefaultFontFamily = "Verdana",
                             Description = "Perfect for promoting upcoming events",
                             IsActive = true,
@@ -393,7 +402,7 @@ namespace FacebookTimerPosts.Migrations
                         new
                         {
                             Id = 3,
-                            CreatedAt = new DateTime(2025, 4, 26, 10, 3, 41, 866, DateTimeKind.Utc).AddTicks(26),
+                            CreatedAt = new DateTime(2025, 4, 26, 17, 14, 51, 931, DateTimeKind.Utc).AddTicks(4429),
                             DefaultFontFamily = "Roboto",
                             Description = "Build anticipation for product launches",
                             IsActive = true,
@@ -710,7 +719,7 @@ namespace FacebookTimerPosts.Migrations
                     b.HasOne("FacebookTimerPosts.Models.FacebookPage", "FacebookPage")
                         .WithMany("Posts")
                         .HasForeignKey("FacebookPageId")
-                        .OnDelete(DeleteBehavior.Cascade)
+                        .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
 
                     b.HasOne("FacebookTimerPosts.Models.Template", "Template")
@@ -719,17 +728,15 @@ namespace FacebookTimerPosts.Migrations
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
 
-                    b.HasOne("FacebookTimerPosts.Models.User", "User")
+                    b.HasOne("FacebookTimerPosts.Models.User", null)
                         .WithMany("Posts")
                         .HasForeignKey("UserId")
-                        .OnDelete(DeleteBehavior.NoAction)
+                        .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
                     b.Navigation("FacebookPage");
 
                     b.Navigation("Template");
-
-                    b.Navigation("User");
                 });
 
             modelBuilder.Entity("FacebookTimerPosts.Models.Template", b =>
