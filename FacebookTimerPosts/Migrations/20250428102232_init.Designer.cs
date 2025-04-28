@@ -12,7 +12,7 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace FacebookTimerPosts.Migrations
 {
     [DbContext(typeof(ApplicationDbContext))]
-    [Migration("20250426171453_init")]
+    [Migration("20250428102232_init")]
     partial class init
     {
         /// <inheritdoc />
@@ -158,7 +158,6 @@ namespace FacebookTimerPosts.Migrations
                     SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
 
                     b.Property<string>("BackgroundImageUrl")
-                        .IsRequired()
                         .HasColumnType("nvarchar(max)");
 
                     b.Property<DateTime>("CreatedAt")
@@ -182,8 +181,7 @@ namespace FacebookTimerPosts.Migrations
                     b.Property<DateTime>("EventDateTime")
                         .HasColumnType("datetime2");
 
-                    b.Property<int?>("FacebookPageId")
-                        .IsRequired()
+                    b.Property<int>("FacebookPageId")
                         .HasColumnType("int");
 
                     b.Property<string>("FacebookPostId")
@@ -293,7 +291,7 @@ namespace FacebookTimerPosts.Migrations
                         new
                         {
                             Id = 1,
-                            CreatedAt = new DateTime(2025, 4, 26, 17, 14, 51, 931, DateTimeKind.Utc).AddTicks(3924),
+                            CreatedAt = new DateTime(2025, 4, 28, 10, 22, 32, 136, DateTimeKind.Utc).AddTicks(6814),
                             Description = "Free plan with basic features",
                             DurationInDays = 0,
                             IsActive = true,
@@ -305,7 +303,7 @@ namespace FacebookTimerPosts.Migrations
                         new
                         {
                             Id = 2,
-                            CreatedAt = new DateTime(2025, 4, 26, 17, 14, 51, 931, DateTimeKind.Utc).AddTicks(3934),
+                            CreatedAt = new DateTime(2025, 4, 28, 10, 22, 32, 136, DateTimeKind.Utc).AddTicks(6820),
                             Description = "Professional plan with advanced features",
                             DurationInDays = 30,
                             IsActive = true,
@@ -317,7 +315,7 @@ namespace FacebookTimerPosts.Migrations
                         new
                         {
                             Id = 3,
-                            CreatedAt = new DateTime(2025, 4, 26, 17, 14, 51, 931, DateTimeKind.Utc).AddTicks(3940),
+                            CreatedAt = new DateTime(2025, 4, 28, 10, 22, 32, 136, DateTimeKind.Utc).AddTicks(6823),
                             Description = "Premium plan with all features",
                             DurationInDays = 30,
                             IsActive = true,
@@ -380,7 +378,7 @@ namespace FacebookTimerPosts.Migrations
                         new
                         {
                             Id = 1,
-                            CreatedAt = new DateTime(2025, 4, 26, 17, 14, 51, 931, DateTimeKind.Utc).AddTicks(4353),
+                            CreatedAt = new DateTime(2025, 4, 28, 10, 22, 32, 136, DateTimeKind.Utc).AddTicks(7012),
                             DefaultFontFamily = "Arial",
                             Description = "A simple, clean countdown template",
                             IsActive = true,
@@ -391,7 +389,7 @@ namespace FacebookTimerPosts.Migrations
                         new
                         {
                             Id = 2,
-                            CreatedAt = new DateTime(2025, 4, 26, 17, 14, 51, 931, DateTimeKind.Utc).AddTicks(4424),
+                            CreatedAt = new DateTime(2025, 4, 28, 10, 22, 32, 136, DateTimeKind.Utc).AddTicks(7016),
                             DefaultFontFamily = "Verdana",
                             Description = "Perfect for promoting upcoming events",
                             IsActive = true,
@@ -402,7 +400,7 @@ namespace FacebookTimerPosts.Migrations
                         new
                         {
                             Id = 3,
-                            CreatedAt = new DateTime(2025, 4, 26, 17, 14, 51, 931, DateTimeKind.Utc).AddTicks(4429),
+                            CreatedAt = new DateTime(2025, 4, 28, 10, 22, 32, 136, DateTimeKind.Utc).AddTicks(7018),
                             DefaultFontFamily = "Roboto",
                             Description = "Build anticipation for product launches",
                             IsActive = true,

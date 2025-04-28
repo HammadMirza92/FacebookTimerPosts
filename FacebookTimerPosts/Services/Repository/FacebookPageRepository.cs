@@ -28,24 +28,23 @@ namespace FacebookTimerPosts.Services.Repository
             return await _context.FacebookPages
                 .FirstOrDefaultAsync(p => p.Id == id && p.UserId == userId);
         }
-
-        public async Task<bool> PageBelongsToUserAsync(int pageId, string userId)
+        public async Task<bool> PageBelongsToUserAsync(string pageId, string userId)
         {
             return await _context.FacebookPages
-                .AnyAsync(p => p.Id == pageId && p.UserId == userId);
+                .AnyAsync(p => p.PageId == pageId && p.UserId == userId);
         }
 
-        public async Task<FacebookPage> LinkFacebookPageAsync(string userId, string pageId, string pageName, string accessToken, DateTime expiryDate)
+        public async Task<FacebookPage> LinkFacebookPageAsync(string userId, string pageId, string pageName, string pageAccessToken, DateTime expiryDate)
         {
             // Check if the page is already linked to this user
             var existingPage = await _context.FacebookPages
-                .FirstOrDefaultAsync(p => p.PageId == pageId && p.UserId == userId);
+                .FirstOrDefaultAsync(p => p.PageAccessToken == pageAccessToken && p.UserId == userId);
 
             if (existingPage != null)
             {
                 // Update the existing page with new token info
                 existingPage.PageName = pageName;
-                existingPage.PageAccessToken = accessToken;
+                existingPage.PageAccessToken = pageAccessToken;
                 existingPage.TokenExpiryDate = expiryDate;
                 existingPage.IsActive = true;
                 existingPage.UpdatedAt = DateTime.UtcNow;
@@ -63,7 +62,7 @@ namespace FacebookTimerPosts.Services.Repository
                     UserId = userId,
                     PageId = pageId,
                     PageName = pageName,
-                    PageAccessToken = accessToken,
+                    PageAccessToken = pageAccessToken,
                     TokenExpiryDate = expiryDate,
                     IsActive = true,
                     CreatedAt = DateTime.UtcNow
@@ -75,5 +74,11 @@ namespace FacebookTimerPosts.Services.Repository
                 return newPage;
             }
         }
+        public async Task<string> GetPageAccessTokenAsync(int pageId)
+        {
+            var page = await _context.FacebookPages.FindAsync(pageId);
+            return page?.PageAccessToken;
+        }
     }
+
 }

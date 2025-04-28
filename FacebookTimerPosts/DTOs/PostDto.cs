@@ -6,6 +6,8 @@ namespace FacebookTimerPosts.DTOs
     {
         public int Id { get; set; }
         public int FacebookPageId { get; set; }
+        public int FacebookAccessPageId { get; set; }
+        public string FacebookPageAccessToken{ get; set; }
         public string FacebookPageName { get; set; }
         public int TemplateId { get; set; }
         public string TemplateName { get; set; }
@@ -27,6 +29,7 @@ namespace FacebookTimerPosts.DTOs
         public DateTime? PublishedAt { get; set; }
         public DateTime? ScheduledFor { get; set; }
         public int? RefreshIntervalInMinutes { get; set; }
+        public DateTime? NextRefreshTime { get; set; }
         public string CountdownPublicId { get; set; }
     }
 }

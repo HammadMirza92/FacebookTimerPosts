@@ -13,7 +13,7 @@ namespace FacebookTimerPosts.Models
         public string UserId { get; set; }
 
         [Required]
-        public int? FacebookPageId { get; set; }
+        public int FacebookPageId { get; set; }
 
         [ForeignKey("FacebookPageId")]
         public virtual FacebookPage FacebookPage { get; set; }
@@ -48,7 +48,7 @@ namespace FacebookTimerPosts.Models
 
         public bool ShowSeconds { get; set; } = true;
 
-        public string BackgroundImageUrl { get; set; }
+        public string? BackgroundImageUrl { get; set; }
 
         public bool HasOverlay { get; set; }
 

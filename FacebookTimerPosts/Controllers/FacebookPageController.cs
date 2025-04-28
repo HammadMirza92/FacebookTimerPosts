@@ -9,7 +9,7 @@ using System.Text.Json;
 
 namespace FacebookTimerPosts.Controllers
 {
-    //[Authorize]
+    [Authorize]
     [Route("api/[controller]")]
     [ApiController]
     public class FacebookPageController : ControllerBase
@@ -29,14 +29,10 @@ namespace FacebookTimerPosts.Controllers
             _appSecret = configuration["Facebook:AppSecret"];
         }
 
-        [HttpGet("get-pages")]
-        public async Task<IActionResult> GetUserPagesAsync(string accessTokenFb)
+        [HttpGet]
+        [Route("get-user-pages")]
+        public async Task<IActionResult> GetUserPages()
         {
-            if (string.IsNullOrEmpty(accessTokenFb))
-            {
-                return BadRequest("Access token is required");
-            }
-
             try
             {
                 // Get the current user's ID
@@ -46,19 +42,47 @@ namespace FacebookTimerPosts.Controllers
                     return Unauthorized("User must be authenticated");
                 }
 
+                // Get the user's Facebook pages from the database
+                var pages = await _facebookPageRepository.GetUserPagesAsync(userId);
+
+                return Ok(pages.Select(p => new {
+                    p.Id,
+                    p.PageId,
+                    p.PageName,
+                    p.IsActive,
+                    p.CreatedAt
+                }));
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, $"Error retrieving Facebook pages: {ex.Message}");
+            }
+        }
+
+        [HttpGet("link-pages")]
+        public async Task<IActionResult> LinkFacebookPages(string accessTokenFb)
+        {
+            if (string.IsNullOrEmpty(accessTokenFb))
+            {
+                return BadRequest("Access token is required");
+            }
+            try
+            {
+                // Get the current user's ID
+                var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
+                if (string.IsNullOrEmpty(userId))
+                {
+                    return Unauthorized("User must be authenticated");
+                }
                 var response = await _httpClient.GetAsync(
                     $"{_graphApiVersion}/me/accounts?access_token={accessTokenFb}");
-
                 var rawJson = await response.Content.ReadAsStringAsync();
-
                 if (!response.IsSuccessStatusCode)
                 {
                     return StatusCode((int)response.StatusCode, $"Facebook API error: {rawJson}");
                 }
-
                 // Deserialize into JsonElement to handle dynamic JSON
                 var pageResponse = JsonSerializer.Deserialize<JsonElement>(rawJson);
-
                 if (pageResponse.ValueKind == JsonValueKind.Undefined ||
                     !pageResponse.TryGetProperty("data", out JsonElement dataElement) ||
                     dataElement.GetArrayLength() == 0)
@@ -66,8 +90,9 @@ namespace FacebookTimerPosts.Controllers
                     return Ok(new { Message = "No Facebook pages found" });
                 }
 
-                // Process each page and link it to the user
+                // Lists to track new and existing pages
                 var linkedPages = new List<FacebookPage>();
+                int existingPagesCount = 0;
 
                 foreach (JsonElement page in dataElement.EnumerateArray())
                 {
@@ -75,40 +100,72 @@ namespace FacebookTimerPosts.Controllers
                     string pageId = string.Empty;
                     string pageName = string.Empty;
                     string accessToken = string.Empty;
-
                     if (page.TryGetProperty("id", out JsonElement idElement))
                         pageId = idElement.GetString() ?? string.Empty;
-
                     if (page.TryGetProperty("name", out JsonElement nameElement))
                         pageName = nameElement.GetString() ?? string.Empty;
-
                     if (page.TryGetProperty("access_token", out JsonElement tokenElement))
                         accessToken = tokenElement.GetString() ?? string.Empty;
-
-                    // Set token expiry date (typically long-lived tokens last 60 days)
-                    var expiryDate = DateTime.UtcNow.AddDays(60);
 
                     // Only proceed if we have the required data
                     if (!string.IsNullOrEmpty(pageId) && !string.IsNullOrEmpty(accessToken))
                     {
-                        // Link page to user
-                        var linkedPage = await _facebookPageRepository.LinkFacebookPageAsync(
-                            userId,
-                            pageId,
-                            pageName,
-                            accessToken,
-                            expiryDate
-                        );
+                        // Check if page already exists - now returns boolean
+                        bool pageExists = await _facebookPageRepository.PageBelongsToUserAsync(pageId, userId);
 
-                        linkedPages.Add(linkedPage);
+                        if (pageExists)
+                        {
+                            // Increment counter for existing pages
+                            existingPagesCount++;
+                        }
+                        else
+                        {
+                            // Page doesn't exist, create a new link
+                            // Set token expiry date (typically long-lived tokens last 60 days)
+                            var expiryDate = DateTime.UtcNow.AddDays(60);
+
+                            var linkedPage = await _facebookPageRepository.LinkFacebookPageAsync(
+                                userId,
+                                pageId,
+                                pageName,
+                                accessToken,
+                                expiryDate
+                            );
+
+                            linkedPages.Add(linkedPage);
+                        }
                     }
                 }
 
-                // Return the list of linked pages
+                // After processing, get all pages for this user to include in response
+                var allUserPages = await _facebookPageRepository.GetUserPagesAsync(userId);
+
+                // Prepare the response message based on what happened
+                string message;
+                if (linkedPages.Count > 0 && existingPagesCount > 0)
+                {
+                    message = $"{linkedPages.Count} new page(s) linked and {existingPagesCount} page(s) already exist";
+                }
+                else if (linkedPages.Count > 0)
+                {
+                    message = $"{linkedPages.Count} page(s) successfully linked to your account";
+                }
+                else if (existingPagesCount > 0)
+                {
+                    message = "All pages are already linked to your account";
+                }
+                else
+                {
+                    message = "No pages were linked";
+                }
+
+                // Return the appropriate response
                 return Ok(new
                 {
-                    Message = "Pages successfully linked to your account",
-                    Pages = linkedPages.Select(p => new {
+                    Message = message,
+                    NewPagesCount = linkedPages.Count,
+                    ExistingPagesCount = existingPagesCount,
+                    Pages = allUserPages.Select(p => new {
                         p.Id,
                         p.PageId,
                         p.PageName,

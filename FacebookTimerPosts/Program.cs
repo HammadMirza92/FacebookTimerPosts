@@ -44,6 +44,7 @@ builder.Services.AddScoped<IFacebookPageRepository, FacebookPageRepository>();
 builder.Services.AddScoped<IPostRepository, PostRepository>();
 builder.Services.AddScoped<ICountdownTimerRepository, CountdownTimerRepository>();
 builder.Services.AddScoped<IPaymentResultRepository, PaymentResultRepository>();
+builder.Services.AddScoped<IFacebookService, FacebookService>();
 
 // Register HttpClient
 builder.Services.AddHttpClient();

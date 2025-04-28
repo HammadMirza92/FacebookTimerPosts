@@ -289,7 +289,7 @@ namespace FacebookTimerPosts.Migrations
                     ShowHours = table.Column<bool>(type: "bit", nullable: false),
                     ShowMinutes = table.Column<bool>(type: "bit", nullable: false),
                     ShowSeconds = table.Column<bool>(type: "bit", nullable: false),
-                    BackgroundImageUrl = table.Column<string>(type: "nvarchar(max)", nullable: false),
+                    BackgroundImageUrl = table.Column<string>(type: "nvarchar(max)", nullable: true),
                     HasOverlay = table.Column<bool>(type: "bit", nullable: false),
                     CreatedAt = table.Column<DateTime>(type: "datetime2", nullable: false),
                     UpdatedAt = table.Column<DateTime>(type: "datetime2", nullable: true),
@@ -384,9 +384,9 @@ namespace FacebookTimerPosts.Migrations
                 columns: new[] { "Id", "CreatedAt", "Description", "DurationInDays", "IsActive", "MaxPosts", "MaxTemplates", "Name", "Price", "UpdatedAt" },
                 values: new object[,]
                 {
-                    { 1, new DateTime(2025, 4, 26, 17, 14, 51, 931, DateTimeKind.Utc).AddTicks(3924), "Free plan with basic features", 0, true, 1, 7, "Free", 0m, null },
-                    { 2, new DateTime(2025, 4, 26, 17, 14, 51, 931, DateTimeKind.Utc).AddTicks(3934), "Professional plan with advanced features", 30, true, 10, 20, "Pro", 20m, null },
-                    { 3, new DateTime(2025, 4, 26, 17, 14, 51, 931, DateTimeKind.Utc).AddTicks(3940), "Premium plan with all features", 30, true, 20, 0, "Premium", 50m, null }
+                    { 1, new DateTime(2025, 4, 28, 10, 22, 32, 136, DateTimeKind.Utc).AddTicks(6814), "Free plan with basic features", 0, true, 1, 7, "Free", 0m, null },
+                    { 2, new DateTime(2025, 4, 28, 10, 22, 32, 136, DateTimeKind.Utc).AddTicks(6820), "Professional plan with advanced features", 30, true, 10, 20, "Pro", 20m, null },
+                    { 3, new DateTime(2025, 4, 28, 10, 22, 32, 136, DateTimeKind.Utc).AddTicks(6823), "Premium plan with all features", 30, true, 20, 0, "Premium", 50m, null }
                 });
 
             migrationBuilder.InsertData(
@@ -394,9 +394,9 @@ namespace FacebookTimerPosts.Migrations
                 columns: new[] { "Id", "BackgroundImageUrl", "CreatedAt", "DefaultFontFamily", "Description", "IsActive", "MinimumSubscriptionPlanId", "Name", "PrimaryColor", "RequiresSubscription", "UpdatedAt" },
                 values: new object[,]
                 {
-                    { 1, null, new DateTime(2025, 4, 26, 17, 14, 51, 931, DateTimeKind.Utc).AddTicks(4353), "Arial", "A simple, clean countdown template", true, null, "Basic Countdown", "#000000", false, null },
-                    { 2, null, new DateTime(2025, 4, 26, 17, 14, 51, 931, DateTimeKind.Utc).AddTicks(4424), "Verdana", "Perfect for promoting upcoming events", true, null, "Event Promotion", "#FF5733", false, null },
-                    { 3, null, new DateTime(2025, 4, 26, 17, 14, 51, 931, DateTimeKind.Utc).AddTicks(4429), "Roboto", "Build anticipation for product launches", true, 2, "Product Launch", "#3498DB", true, null }
+                    { 1, null, new DateTime(2025, 4, 28, 10, 22, 32, 136, DateTimeKind.Utc).AddTicks(7012), "Arial", "A simple, clean countdown template", true, null, "Basic Countdown", "#000000", false, null },
+                    { 2, null, new DateTime(2025, 4, 28, 10, 22, 32, 136, DateTimeKind.Utc).AddTicks(7016), "Verdana", "Perfect for promoting upcoming events", true, null, "Event Promotion", "#FF5733", false, null },
+                    { 3, null, new DateTime(2025, 4, 28, 10, 22, 32, 136, DateTimeKind.Utc).AddTicks(7018), "Roboto", "Build anticipation for product launches", true, 2, "Product Launch", "#3498DB", true, null }
                 });
 
             migrationBuilder.CreateIndex(

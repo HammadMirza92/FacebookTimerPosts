@@ -29,7 +29,7 @@ namespace FacebookTimerPosts.Services.Repository
             try
             {
                 // Get the Facebook page
-                var page = await _facebookPageRepository.GetByIdAsync((int)post.FacebookPageId);
+                var page = await _facebookPageRepository.GetByIdAsync(post.FacebookPageId);
                 if (page == null)
                 {
                     return (false, null, "Facebook page not found");
