@@ -79,6 +79,41 @@ namespace FacebookTimerPosts.Services.Repository
             var page = await _context.FacebookPages.FindAsync(pageId);
             return page?.PageAccessToken;
         }
+        public async Task<bool> DeleteFacebookPageByPageIdAsync(string pageId, string userId)
+        {
+            try
+            {
+                // Find the page by Facebook pageId (not the database id) and user id
+                var page = await _context.FacebookPages
+                    .FirstOrDefaultAsync(p => p.PageId == pageId && p.UserId == userId);
+
+                if (page == null)
+                {
+                    return false;
+                }
+
+                // Remove any related data if needed (e.g., posts)
+                // If you have posts related to this page, you may want to handle them here
+                var relatedPosts = await _context.Posts
+                    .Where(p => p.FacebookPageId == page.Id)
+                    .ToListAsync();
+
+                if (relatedPosts.Any())
+                {
+                    _context.Posts.RemoveRange(relatedPosts);
+                }
+
+                // Remove the page
+                _context.FacebookPages.Remove(page);
+                await _context.SaveChangesAsync();
+
+                return true;
+            }
+            catch (Exception)
+            {
+                return false;
+            }
+        }
     }
 
 }

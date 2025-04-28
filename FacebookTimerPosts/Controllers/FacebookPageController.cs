@@ -179,7 +179,41 @@ namespace FacebookTimerPosts.Controllers
                 return StatusCode(500, $"Error: {ex.Message}");
             }
         }
+        [HttpDelete("unlinkFbPage/{pageId}")]
+        public async Task<IActionResult> UnlinkFacebookPage(string pageId)
+        {
+            try
+            {
+                // Get the current user's ID
+                var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
+                if (string.IsNullOrEmpty(userId))
+                {
+                    return Unauthorized("User must be authenticated");
+                }
 
+                // First check if the page belongs to the user
+                bool pageExists = await _facebookPageRepository.PageBelongsToUserAsync(pageId, userId);
+                if (!pageExists)
+                {
+                    return NotFound($"Facebook page with ID {pageId} not found or does not belong to this user");
+                }
+
+                // Delete the page using the Facebook pageId (not the database id)
+                bool result = await _facebookPageRepository.DeleteFacebookPageByPageIdAsync(pageId, userId);
+                if (result)
+                {
+                    return Ok(new { Message = "Facebook page successfully unlinked" });
+                }
+                else
+                {
+                    return StatusCode(500, "Failed to unlink Facebook page");
+                }
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, $"Error unlinking Facebook page: {ex.Message}");
+            }
+        }
         [HttpPost]
         public async Task<IActionResult> CreatePostAsync(string pageId, string pageAccessToken, PostContent postContent)
         {

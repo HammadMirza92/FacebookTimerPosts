@@ -11,5 +11,7 @@ namespace FacebookTimerPosts.Services.IRepository
         Task<FacebookPage> LinkFacebookPageAsync(string userId, string pageId, string pageName, string pageAccessToken, DateTime expiryDate);
         Task<bool> PageBelongsToUserAsync(string pageId, string userId);
         Task<string> GetPageAccessTokenAsync(int pageId);
+        Task<bool> DeleteFacebookPageByPageIdAsync(string pageId, string userId);
+
     }
 }
