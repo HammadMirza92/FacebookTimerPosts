@@ -13,5 +13,11 @@
         public string MinimumSubscriptionPlanName { get; set; }
         public bool IsActive { get; set; }
         public DateTime CreatedAt { get; set; }
+
+        // HTML template content field
+        public string HtmlTemplate { get; set; }
+
+        // Available template variables for frontend substitution
+        public List<string> TemplateVariables { get; set; } = new List<string>();
     }
 }

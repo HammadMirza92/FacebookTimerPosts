@@ -9,5 +9,6 @@ namespace FacebookTimerPosts.Services.IRepository
         Task<IList<Template>> GetTemplatesForUserAsync(string userId, int? subscriptionPlanId);
         Task<int> CountUserAvailableTemplatesAsync(string userId, int? subscriptionPlanId);
         Task<bool> IsTemplateAccessibleToUserAsync(int templateId, string userId, int? subscriptionPlanId);
+        string ProcessTemplate(string htmlTemplate, Dictionary<string, string> substitutions);
     }
 }

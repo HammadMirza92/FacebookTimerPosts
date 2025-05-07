@@ -4,6 +4,7 @@ using FacebookTimerPosts.Models;
 using FacebookTimerPosts.Services.IRepository;
 using FacebookTimerPosts.Services.Repository.Base;
 using Microsoft.EntityFrameworkCore;
+using static FacebookTimerPosts.Services.Repository.TemplateRepository;
 
 namespace FacebookTimerPosts.Services.Repository
 {
@@ -82,6 +83,20 @@ namespace FacebookTimerPosts.Services.Repository
             // Check if user's subscription plan level is sufficient for the template
             return !template.MinimumSubscriptionPlanId.HasValue ||
                    template.MinimumSubscriptionPlanId.Value <= subscriptionPlanId.Value;
+        }
+        public string ProcessTemplate(string htmlTemplate, Dictionary<string, string> substitutions)
+        {
+            if (string.IsNullOrEmpty(htmlTemplate))
+            {
+                return string.Empty;
+            }
+
+            foreach (var kvp in substitutions)
+            {
+                htmlTemplate = htmlTemplate.Replace("{{" + kvp.Key + "}}", kvp.Value);
+            }
+
+            return htmlTemplate;
         }
     }
 }
