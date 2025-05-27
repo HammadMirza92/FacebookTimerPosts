@@ -199,6 +199,7 @@ namespace FacebookTimerPosts.Controllers
                 return StatusCode(500, $"Error: {ex.Message}");
             }
         }
+
         [HttpDelete("unlinkFbPage/{pageId}")]
         public async Task<IActionResult> UnlinkFacebookPage(string pageId)
         {
@@ -222,7 +223,12 @@ namespace FacebookTimerPosts.Controllers
                 bool result = await _facebookPageRepository.DeleteFacebookPageByPageIdAsync(pageId, userId);
                 if (result)
                 {
-                    return Ok(new { Message = "Facebook page successfully unlinked" });
+                    // Updated message to indicate posts are kept in the database
+                    return Ok(new
+                    {
+                        Message = "Facebook page successfully unlinked",
+                        PostsWarning = "Posts associated with this page are kept in the database. If you want to delete posts from Facebook, please relink this page first."
+                    });
                 }
                 else
                 {
@@ -234,7 +240,7 @@ namespace FacebookTimerPosts.Controllers
                 return StatusCode(500, $"Error unlinking Facebook page: {ex.Message}");
             }
         }
-       
+
         // Helper classes for serialization/deserialization
         public class FacebookPageResponse
         {

@@ -9,6 +9,7 @@ namespace FacebookTimerPosts.Services.Repository
     public class FacebookPageRepository : Repository<FacebookPage>, IFacebookPageRepository
     {
         private readonly ApplicationDbContext _context;
+        private const string DEACTIVATED_TOKEN = "DEACTIVATED_TOKEN_DO_NOT_USE";
 
         public FacebookPageRepository(ApplicationDbContext context) : base(context)
         {
@@ -44,6 +45,7 @@ namespace FacebookTimerPosts.Services.Repository
             return await _context.FacebookPages
                 .FirstOrDefaultAsync(p => p.Id == id && p.UserId == userId);
         }
+
         public async Task<bool> PageBelongsToUserAsync(string pageId, string userId)
         {
             return await _context.FacebookPages
@@ -90,11 +92,18 @@ namespace FacebookTimerPosts.Services.Repository
                 return newPage;
             }
         }
+
         public async Task<string> GetPageAccessTokenAsync(int pageId)
         {
             var page = await _context.FacebookPages.FindAsync(pageId);
-            return page?.PageAccessToken;
+            if (page != null && page.IsActive && page.PageAccessToken != DEACTIVATED_TOKEN)
+            {
+                return page.PageAccessToken;
+            }
+
+            return null;
         }
+
         public async Task<bool> DeleteFacebookPageByPageIdAsync(string pageId, string userId)
         {
             try
@@ -108,20 +117,27 @@ namespace FacebookTimerPosts.Services.Repository
                     return false;
                 }
 
-                // Remove any related data if needed (e.g., posts)
-                // If you have posts related to this page, you may want to handle them here
-                var relatedPosts = await _context.Posts
-                    .Where(p => p.FacebookPageId == page.Id)
-                    .ToListAsync();
+                // Check if there are any posts associated with this page
+                bool hasAssociatedPosts = await _context.Posts
+                    .AnyAsync(p => p.FacebookPageId == page.Id);
 
-                if (relatedPosts.Any())
+                if (hasAssociatedPosts)
                 {
-                    _context.Posts.RemoveRange(relatedPosts);
-                }
+                    // Instead of deleting the page (which would violate the foreign key constraint),
+                    // we mark it as inactive and clear the access token
+                    page.IsActive = false;
+                    page.PageAccessToken = DEACTIVATED_TOKEN; // Clear token for security
+                    page.UpdatedAt = DateTime.UtcNow;
 
-                // Remove the page
-                _context.FacebookPages.Remove(page);
-                await _context.SaveChangesAsync();
+                    _context.FacebookPages.Update(page);
+                    await _context.SaveChangesAsync();
+                }
+                else
+                {
+                    // No posts associated, safe to delete
+                    _context.FacebookPages.Remove(page);
+                    await _context.SaveChangesAsync();
+                }
 
                 return true;
             }
@@ -130,6 +146,22 @@ namespace FacebookTimerPosts.Services.Repository
                 return false;
             }
         }
-    }
 
+        // Add a new method to check if a Facebook page is linked
+        public async Task<bool> IsPageLinkedAsync(string pageId)
+        {
+            var page = await _context.FacebookPages
+                .FirstOrDefaultAsync(p => p.PageId == pageId);
+
+            // A page is considered linked if it's active and has a valid token
+            return page != null && page.IsActive && page.PageAccessToken != DEACTIVATED_TOKEN;
+        }
+
+        // Get Facebook page by pageId
+        public async Task<FacebookPage> GetPageByPageIdAsync(string pageId)
+        {
+            return await _context.FacebookPages
+                .FirstOrDefaultAsync(p => p.PageId == pageId);
+        }
+    }
 }

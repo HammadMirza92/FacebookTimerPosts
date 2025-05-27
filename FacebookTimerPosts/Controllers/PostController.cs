@@ -630,15 +630,27 @@ public async Task<IActionResult> CreatePost([FromBody] CreatePostDto createPostD
                     LocalDeletion = false,
                     FacebookDeletion = false,
                     FacebookError = (string)null,
-                    PostHadFacebookId = !string.IsNullOrEmpty(post.FacebookPostId)
+                    PostHadFacebookId = !string.IsNullOrEmpty(post.FacebookPostId),
+                    PageIsLinked = true // Default value, will update below
                 };
 
-                // Try to delete from Facebook first if post has FacebookPostId
-                if (!string.IsNullOrEmpty(post.FacebookPostId))
+                // Check if the Facebook page for this post is still linked
+                string facebookPageId = post.FacebookPage?.PageId;
+                bool pageIsLinked = false;
+
+                if (!string.IsNullOrEmpty(facebookPageId))
+                {
+                    pageIsLinked = await _facebookPageRepository.IsPageLinkedAsync(facebookPageId);
+                    deletionResults = deletionResults with { PageIsLinked = pageIsLinked };
+                }
+
+                // Try to delete from Facebook first if post has FacebookPostId AND page is linked
+                if (!string.IsNullOrEmpty(post.FacebookPostId) && pageIsLinked)
                 {
                     try
                     {
-                        _logger.LogInformation("Post {PostId} has Facebook Post ID {FacebookPostId}, attempting Facebook deletion", id, post.FacebookPostId);
+                        _logger.LogInformation("Post {PostId} has Facebook Post ID {FacebookPostId} and page is linked, attempting Facebook deletion",
+                            id, post.FacebookPostId);
 
                         var page = await _facebookPageRepository.GetByIdAsync(post.FacebookPageId);
                         if (page == null)
@@ -697,6 +709,10 @@ public async Task<IActionResult> CreatePost([FromBody] CreatePostDto createPostD
                         deletionResults = deletionResults with { FacebookError = ex.Message };
                     }
                 }
+                else if (!string.IsNullOrEmpty(post.FacebookPostId) && !pageIsLinked)
+                {
+                    _logger.LogInformation("Post {PostId} has Facebook Post ID {FacebookPostId} but page is not linked", id, post.FacebookPostId);
+                }
                 else
                 {
                     _logger.LogInformation("Post {PostId} has no Facebook Post ID, skipping Facebook deletion", id);
@@ -726,6 +742,15 @@ public async Task<IActionResult> CreatePost([FromBody] CreatePostDto createPostD
                     return Ok(new
                     {
                         message = "Post deleted successfully from database",
+                        deletionResults
+                    });
+                }
+                else if (!deletionResults.PageIsLinked)
+                {
+                    return Ok(new
+                    {
+                        message = "Post deleted from database only",
+                        warning = "Page is not linked. We are just deleting this post in our database not from Facebook. If you want to delete the post from Facebook please link same page again.",
                         deletionResults
                     });
                 }
