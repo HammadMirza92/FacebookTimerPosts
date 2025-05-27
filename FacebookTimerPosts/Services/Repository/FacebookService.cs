@@ -1,4 +1,5 @@
-﻿using FacebookTimerPosts.Models;
+﻿using FacebookTimerPosts.DTOs;
+using FacebookTimerPosts.Models;
 using FacebookTimerPosts.Services.IRepository;
 using System.Net.Http.Headers;
 using System.Text.Json;
@@ -13,6 +14,7 @@ namespace FacebookTimerPosts.Services.Repository
         private readonly IHttpClientFactory _httpClientFactory;
         private readonly IConfiguration _configuration;
         private readonly ILogger<FacebookService> _logger;
+        private const string GRAPH_API_VERSION = "v18.0";
 
         public FacebookService(
             IFacebookPageRepository facebookPageRepository,
@@ -258,37 +260,128 @@ namespace FacebookTimerPosts.Services.Repository
                 return (false, null, $"Error: {ex.Message}");
             }
         }
-
-        public async Task<bool> DeletePostAsync(string postId, string pageAccessToken)
+        public async Task<bool> ValidateAccessTokenAsync(string accessToken)
         {
             try
             {
                 var client = _httpClientFactory.CreateClient("FacebookGraph");
+                var url = $"https://graph.facebook.com/{GRAPH_API_VERSION}/me?access_token={Uri.EscapeDataString(accessToken)}";
 
-                var content = new FormUrlEncodedContent(new Dictionary<string, string>
+                var response = await client.GetAsync(url);
+
+                if (response.IsSuccessStatusCode)
                 {
-                    { "access_token", pageAccessToken }
-                });
-
-                var response = await client.SendAsync(new HttpRequestMessage
-                {
-                    Method = HttpMethod.Delete,
-                    RequestUri = new Uri($"https://graph.facebook.com/v22.0/{postId}"),
-                    Content = content
-                });
-
-                if (!response.IsSuccessStatusCode)
+                    _logger.LogInformation("Access token validation successful");
+                    return true;
+                }
+                else
                 {
                     var errorContent = await response.Content.ReadAsStringAsync();
-                    _logger.LogError("Delete post error: {StatusCode} - {Response}", response.StatusCode, errorContent);
+                    _logger.LogError("Access token validation failed: {StatusCode} - {Response}", response.StatusCode, errorContent);
                     return false;
                 }
-
-                return true;
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error deleting Facebook post");
+                _logger.LogError(ex, "Error validating access token: {Message}", ex.Message);
+                return false;
+            }
+        }
+        public async Task<bool> PostExistsAsync(string postId, string pageAccessToken)
+        {
+            try
+            {
+                var client = _httpClientFactory.CreateClient("FacebookGraph");
+                var url = $"https://graph.facebook.com/{GRAPH_API_VERSION}/{postId}?fields=id&access_token={Uri.EscapeDataString(pageAccessToken)}";
+
+                var response = await client.GetAsync(url);
+
+                if (response.IsSuccessStatusCode)
+                {
+                    _logger.LogInformation("Post {PostId} exists on Facebook", postId);
+                    return true;
+                }
+                else
+                {
+                    _logger.LogWarning("Post {PostId} does not exist on Facebook or access denied", postId);
+                    return false;
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error checking if post exists: {Message}", ex.Message);
+                return false;
+            }
+        }
+        public async Task<bool> DeletePostAsync(string postId, string pageAccessToken)
+        {
+            try
+            {
+                // Validate inputs
+                if (string.IsNullOrWhiteSpace(postId))
+                {
+                    _logger.LogError("Post ID is null or empty");
+                    return false;
+                }
+
+                if (string.IsNullOrWhiteSpace(pageAccessToken))
+                {
+                    _logger.LogError("Page access token is null or empty");
+                    return false;
+                }
+
+                _logger.LogInformation("Attempting to delete Facebook post {PostId}", postId);
+
+                var client = _httpClientFactory.CreateClient("FacebookGraph");
+
+                // Build URL with access token as query parameter
+                var url = $"https://graph.facebook.com/v18.0/{postId}?access_token={Uri.EscapeDataString(pageAccessToken)}";
+
+                _logger.LogInformation("DELETE request URL: {Url}", url.Replace(pageAccessToken, "[REDACTED]"));
+
+                var response = await client.DeleteAsync(url);
+
+                if (response.IsSuccessStatusCode)
+                {
+                    var successContent = await response.Content.ReadAsStringAsync();
+                    _logger.LogInformation("Successfully deleted Facebook post {PostId}. Response: {Response}", postId, successContent);
+                    return true;
+                }
+                else
+                {
+                    var errorContent = await response.Content.ReadAsStringAsync();
+                    _logger.LogError("Failed to delete Facebook post {PostId}. Status: {StatusCode}, Response: {Response}",
+                        postId, response.StatusCode, errorContent);
+
+                    // Try to parse Facebook error for more specific information
+                    try
+                    {
+                        var errorObj = System.Text.Json.JsonSerializer.Deserialize<FacebookApiError>(errorContent);
+                        _logger.LogError("Facebook API Error - Code: {Code}, Message: {Message}, Type: {Type}",
+                            errorObj?.Error?.Code, errorObj?.Error?.Message, errorObj?.Error?.Type);
+                    }
+                    catch
+                    {
+                        // If we can't parse the error, just log the raw response
+                        _logger.LogError("Could not parse Facebook error response: {ErrorContent}", errorContent);
+                    }
+
+                    return false;
+                }
+            }
+            catch (HttpRequestException httpEx)
+            {
+                _logger.LogError(httpEx, "HTTP error while deleting Facebook post {PostId}: {Message}", postId, httpEx.Message);
+                return false;
+            }
+            catch (TaskCanceledException tcEx)
+            {
+                _logger.LogError(tcEx, "Request timeout while deleting Facebook post {PostId}: {Message}", postId, tcEx.Message);
+                return false;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Unexpected error deleting Facebook post {PostId}: {Message}", postId, ex.Message);
                 return false;
             }
         }

@@ -593,35 +593,150 @@ namespace FacebookTimerPosts.Controllers
         [HttpDelete("{id}")]
         public async Task<IActionResult> DeletePost(int id)
         {
-            var userId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
-            var post = await _postRepository.GetUserPostByIdAsync(id, userId);
-
-            if (post == null)
+            try
             {
-                return NotFound();
-            }
+                var userId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+                var post = await _postRepository.GetUserPostByIdAsync(id, userId);
 
-            // If post is published on Facebook, try to delete it there too
-            if (post.Status == PostStatus.Published && !string.IsNullOrEmpty(post.FacebookPostId))
-            {
+                if (post == null)
+                {
+                    return NotFound("Post not found");
+                }
+
+                _logger.LogInformation("Attempting to delete post {PostId} for user {UserId}. Status: {Status}, FacebookPostId: {FacebookPostId}",
+                    id, userId, post.Status, post.FacebookPostId ?? "NULL");
+
+                var deletionResults = new
+                {
+                    LocalDeletion = false,
+                    FacebookDeletion = false,
+                    FacebookError = (string)null,
+                    PostHadFacebookId = !string.IsNullOrEmpty(post.FacebookPostId)
+                };
+
+                // Try to delete from Facebook first if post has FacebookPostId
+                if (!string.IsNullOrEmpty(post.FacebookPostId))
+                {
+                    try
+                    {
+                        _logger.LogInformation("Post {PostId} has Facebook Post ID {FacebookPostId}, attempting Facebook deletion", id, post.FacebookPostId);
+
+                        var page = await _facebookPageRepository.GetByIdAsync(post.FacebookPageId);
+                        if (page == null)
+                        {
+                            _logger.LogWarning("Facebook page {FacebookPageId} not found for post {PostId}", post.FacebookPageId, id);
+                            deletionResults = deletionResults with { FacebookError = "Facebook page not found" };
+                        }
+                        else if (string.IsNullOrEmpty(page.PageAccessToken))
+                        {
+                            _logger.LogWarning("Page access token is missing for page {FacebookPageId}", post.FacebookPageId);
+                            deletionResults = deletionResults with { FacebookError = "Page access token is missing" };
+                        }
+                        else
+                        {
+                            _logger.LogInformation("Found Facebook page {PageName} (ID: {PageId}) for post {PostId}",
+                                page.PageName, page.Id, id);
+
+                            // Validate access token first
+                            var tokenValid = await _facebookService.ValidateAccessTokenAsync(page.PageAccessToken);
+                            if (!tokenValid)
+                            {
+                                _logger.LogError("Invalid or expired access token for page {PageId}", page.Id);
+                                deletionResults = deletionResults with { FacebookError = "Invalid or expired access token" };
+                            }
+                            else
+                            {
+                                // Check if post exists on Facebook
+                                var postExists = await _facebookService.PostExistsAsync(post.FacebookPostId, page.PageAccessToken);
+                                if (!postExists)
+                                {
+                                    _logger.LogWarning("Post {FacebookPostId} does not exist on Facebook (may have been deleted already)", post.FacebookPostId);
+                                    deletionResults = deletionResults with { FacebookDeletion = true }; // Consider it successful since post is already gone
+                                }
+                                else
+                                {
+                                    // Attempt to delete from Facebook
+                                    var facebookDeleted = await _facebookService.DeletePostAsync(post.FacebookPostId, page.PageAccessToken);
+                                    deletionResults = deletionResults with { FacebookDeletion = facebookDeleted };
+
+                                    if (facebookDeleted)
+                                    {
+                                        _logger.LogInformation("Successfully deleted post {FacebookPostId} from Facebook", post.FacebookPostId);
+                                    }
+                                    else
+                                    {
+                                        _logger.LogError("Failed to delete post {FacebookPostId} from Facebook", post.FacebookPostId);
+                                        deletionResults = deletionResults with { FacebookError = "Facebook API deletion failed" };
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogError(ex, "Exception during Facebook deletion for post {PostId}: {Message}", id, ex.Message);
+                        deletionResults = deletionResults with { FacebookError = ex.Message };
+                    }
+                }
+                else
+                {
+                    _logger.LogInformation("Post {PostId} has no Facebook Post ID, skipping Facebook deletion", id);
+                }
+
+                // Delete from local database
                 try
                 {
-                    var page = await _facebookPageRepository.GetByIdAsync(post.FacebookPageId);
-                    if (page != null)
-                    {
-                        await _facebookService.DeletePostAsync(post.FacebookPostId, page.PageAccessToken);
-                    }
+                    await _postRepository.DeleteAsync(id);
+                    deletionResults = deletionResults with { LocalDeletion = true };
+                    _logger.LogInformation("Successfully deleted post {PostId} from local database", id);
                 }
                 catch (Exception ex)
                 {
-                    _logger.LogWarning(ex, "Failed to delete post from Facebook, continuing with local deletion");
-                    // Continue with local deletion even if Facebook deletion fails
+                    _logger.LogError(ex, "Failed to delete post {PostId} from local database: {Message}", id, ex.Message);
+                    return StatusCode(500, new
+                    {
+                        message = "Failed to delete post from database",
+                        error = ex.Message,
+                        deletionResults
+                    });
+                }
+
+                // Prepare response based on deletion results
+                if (!deletionResults.PostHadFacebookId)
+                {
+                    return Ok(new
+                    {
+                        message = "Post deleted successfully from database",
+                        deletionResults
+                    });
+                }
+                else if (deletionResults.FacebookDeletion)
+                {
+                    return Ok(new
+                    {
+                        message = "Post deleted successfully from both Facebook and database",
+                        deletionResults
+                    });
+                }
+                else
+                {
+                    return Ok(new
+                    {
+                        message = "Post deleted from database, but Facebook deletion failed",
+                        warning = "The post may still exist on Facebook",
+                        deletionResults
+                    });
                 }
             }
-
-            await _postRepository.DeleteAsync(id);
-
-            return Ok(new { message = "Post deleted successfully" });
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Unhandled error deleting post {PostId}: {Message}", id, ex.Message);
+                return StatusCode(500, new
+                {
+                    message = "An unexpected error occurred while deleting the post",
+                    error = ex.Message
+                });
+            }
         }
     }
 }
