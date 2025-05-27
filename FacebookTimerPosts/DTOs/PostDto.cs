@@ -6,8 +6,6 @@ namespace FacebookTimerPosts.DTOs
     {
         public int Id { get; set; }
         public int FacebookPageId { get; set; }
-        public int FacebookAccessPageId { get; set; }
-        public string FacebookPageAccessToken{ get; set; }
         public string FacebookPageName { get; set; }
         public int TemplateId { get; set; }
         public string TemplateName { get; set; }
@@ -24,7 +22,7 @@ namespace FacebookTimerPosts.DTOs
         public bool HasOverlay { get; set; }
         public DateTime CreatedAt { get; set; }
         public DateTime? UpdatedAt { get; set; }
-        public string FacebookPostId { get; set; }
+        public string? FacebookPostId { get; set; }
         public PostStatus Status { get; set; }
         public DateTime? PublishedAt { get; set; }
         public DateTime? ScheduledFor { get; set; }

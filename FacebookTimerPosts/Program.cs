@@ -45,6 +45,7 @@ builder.Services.AddScoped<IPostRepository, PostRepository>();
 builder.Services.AddScoped<ICountdownTimerRepository, CountdownTimerRepository>();
 builder.Services.AddScoped<IPaymentResultRepository, PaymentResultRepository>();
 builder.Services.AddScoped<IFacebookService, FacebookService>();
+builder.Services.AddScoped<IImageGenerationService, ImageGenerationService>();
 
 // Register HttpClient
 builder.Services.AddHttpClient();

@@ -1,23 +1,49 @@
-﻿namespace FacebookTimerPosts.DTOs
+﻿// Create this file: DTOs/CreatePostDto.cs
+using System.ComponentModel.DataAnnotations;
+
+namespace FacebookTimerPosts.DTOs
 {
     public class CreatePostDto
     {
+        [Required]
         public int FacebookPageId { get; set; }
-        public string FacebookPageAccessToken { get; set; }
+
+        [Required]
         public int TemplateId { get; set; }
+
+        [Required]
+        [MaxLength(100)]
         public string Title { get; set; }
+
+        [MaxLength(500)]
         public string Description { get; set; }
+
+        [Required]
         public DateTime EventDateTime { get; set; }
+
+        [MaxLength(100)]
         public string CustomFontFamily { get; set; }
+
+        [MaxLength(7)]
         public string CustomPrimaryColor { get; set; }
-        public bool ShowDays { get; set; }
-        public bool ShowHours { get; set; }
-        public bool ShowMinutes { get; set; }
-        public bool ShowSeconds { get; set; }
+
+        public bool ShowDays { get; set; } = true;
+
+        public bool ShowHours { get; set; } = true;
+
+        public bool ShowMinutes { get; set; } = true;
+
+        public bool ShowSeconds { get; set; } = true;
+
         public string BackgroundImageUrl { get; set; }
+
         public bool HasOverlay { get; set; }
+
         public DateTime? ScheduledFor { get; set; }
+
         public int? RefreshIntervalInMinutes { get; set; }
+
+        // This will be calculated automatically
         public DateTime? NextRefreshTime { get; set; }
     }
 }

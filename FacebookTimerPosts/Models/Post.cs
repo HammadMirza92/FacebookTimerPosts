@@ -58,7 +58,7 @@ namespace FacebookTimerPosts.Models
         public DateTime? UpdatedAt { get; set; }
 
         [MaxLength(100)]
-        public string FacebookPostId { get; set; }
+        public string? FacebookPostId { get; set; }
 
         [Required]
         public PostStatus Status { get; set; } = PostStatus.Draft;

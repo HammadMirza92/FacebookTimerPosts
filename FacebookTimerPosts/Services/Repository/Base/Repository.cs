@@ -16,10 +16,11 @@ namespace FacebookTimerPosts.Services.Repository.Base
             this.dbSet = _db.Set<T>();
         }
 
-        public async Task AddAsync(T entity)
+        public async Task<T> AddAsync(T entity)
         {
             await dbSet.AddAsync(entity);
             await _db.SaveChangesAsync();
+            return entity;
         }
 
         public async Task DeleteAsync(int id)

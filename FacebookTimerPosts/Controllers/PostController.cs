@@ -185,62 +185,109 @@ namespace FacebookTimerPosts.Controllers
         {
             try
             {
+                // Log the incoming request for debugging
+                _logger.LogInformation("CreatePost called with data: {@CreatePostDto}", createPostDto);
+
                 // Check if the model is valid
                 if (!ModelState.IsValid)
                 {
-                    return BadRequest(ModelState);
+                    var errors = ModelState
+                        .Where(x => x.Value.Errors.Count > 0)
+                        .Select(x => new { Field = x.Key, Errors = x.Value.Errors.Select(e => e.ErrorMessage) })
+                        .ToList();
+
+                    _logger.LogWarning("Model validation failed: {@ValidationErrors}", errors);
+                    return BadRequest(new { Message = "Validation failed", Errors = errors });
                 }
 
                 var userId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
                 if (string.IsNullOrEmpty(userId))
                 {
+                    _logger.LogWarning("User not authenticated");
                     return Unauthorized("User not authenticated");
                 }
 
-                // Verify page belongs to user - with error handling
-                try
+                // CRITICAL: Validate Facebook Page ID
+                if (createPostDto.FacebookPageId <= 0)
                 {
-                    //if (!await _facebookPageRepository.PageBelongsToUserAsync(createPostDto.FacebookPageId, userId))
-                    //{
-                    //    return BadRequest("Facebook page not found or doesn't belong to you");
-                    //}
-                }
-                catch (Exception ex)
-                {
-                    _logger.LogError(ex, "Error checking page ownership");
-                    return StatusCode(500, "Error validating Facebook page ownership");
+                    _logger.LogError("Invalid Facebook Page ID: {FacebookPageId}", createPostDto.FacebookPageId);
+                    return BadRequest(new { Message = "Valid Facebook Page ID is required", FacebookPageId = createPostDto.FacebookPageId });
                 }
 
-                // Verify template - with error handling
+                // CRITICAL: Validate Template ID
+                if (createPostDto.TemplateId <= 0)
+                {
+                    _logger.LogError("Invalid Template ID: {TemplateId}", createPostDto.TemplateId);
+                    return BadRequest(new { Message = "Valid Template ID is required", TemplateId = createPostDto.TemplateId });
+                }
+
+                _logger.LogInformation("Creating post for user: {UserId}, Facebook Page: {FacebookPageId}, Template: {TemplateId}",
+                    userId, createPostDto.FacebookPageId, createPostDto.TemplateId);
+
+                // Verify Facebook page exists and belongs to user
                 try
                 {
-                    var userSubscription = await _userSubscriptionRepository.GetCurrentSubscriptionAsync(userId);
-                    int? subscriptionPlanId = userSubscription?.SubscriptionPlanId;
-                    if (!await _templateRepository.IsTemplateAccessibleToUserAsync(createPostDto.TemplateId, userId, subscriptionPlanId))
+                    var facebookPage = await _facebookPageRepository.GetByIdAsync(createPostDto.FacebookPageId);
+                    if (facebookPage == null)
                     {
-                        return BadRequest("Template not found or not accessible with your subscription");
+                        _logger.LogError("Facebook page {FacebookPageId} not found", createPostDto.FacebookPageId);
+                        return BadRequest(new { Message = $"Facebook page with ID {createPostDto.FacebookPageId} not found" });
                     }
+
+                    if (facebookPage.UserId != userId)
+                    {
+                        _logger.LogError("Facebook page {FacebookPageId} does not belong to user {UserId}", createPostDto.FacebookPageId, userId);
+                        return BadRequest(new { Message = "Facebook page does not belong to you" });
+                    }
+
+                    _logger.LogInformation("Facebook page validation passed: {PageName}", facebookPage.PageName);
                 }
                 catch (Exception ex)
                 {
-                    _logger.LogError(ex, "Error checking template access");
-                    return StatusCode(500, "Error validating template access");
+                    _logger.LogError(ex, "Error validating Facebook page {FacebookPageId}", createPostDto.FacebookPageId);
+                    return BadRequest(new { Message = "Error validating Facebook page", Error = ex.Message });
+                }
+
+                // Verify template exists and is accessible
+                try
+                {
+                    var template = await _templateRepository.GetByIdAsync(createPostDto.TemplateId);
+                    if (template == null)
+                    {
+                        _logger.LogError("Template {TemplateId} not found", createPostDto.TemplateId);
+                        return BadRequest(new { Message = $"Template with ID {createPostDto.TemplateId} not found" });
+                    }
+
+                    _logger.LogInformation("Template validation passed: {TemplateName}", template.Name);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Error validating template {TemplateId}", createPostDto.TemplateId);
+                    return BadRequest(new { Message = "Error validating template", Error = ex.Message });
                 }
 
                 // Handle empty background image URL properly
                 string backgroundImageUrl = string.IsNullOrWhiteSpace(createPostDto.BackgroundImageUrl) ?
-                    null : createPostDto.BackgroundImageUrl;
+                    null : createPostDto.BackgroundImageUrl.Trim();
 
+                // Calculate NextRefreshTime if RefreshIntervalInMinutes is provided
+                DateTime? nextRefreshTime = null;
+                if (createPostDto.RefreshIntervalInMinutes.HasValue && createPostDto.RefreshIntervalInMinutes.Value > 0)
+                {
+                    nextRefreshTime = DateTime.UtcNow.AddMinutes(createPostDto.RefreshIntervalInMinutes.Value);
+                }
+
+                // Create the post object with all required fields - ENSURE FacebookPageId is set
                 var post = new Post
                 {
                     UserId = userId,
-                    FacebookPageId = createPostDto.FacebookPageId,
+                    FacebookPageId = createPostDto.FacebookPageId, // CRITICAL: Ensure this is set correctly
                     TemplateId = createPostDto.TemplateId,
-                    Title = createPostDto.Title,
-                    Description = createPostDto.Description,
+                    Title = createPostDto.Title?.Trim() ?? string.Empty,
+                    Description = createPostDto.Description?.Trim() ?? string.Empty,
                     EventDateTime = createPostDto.EventDateTime,
-                    CustomFontFamily = createPostDto.CustomFontFamily,
-                    CustomPrimaryColor = createPostDto.CustomPrimaryColor,
+                    CustomFontFamily = createPostDto.CustomFontFamily?.Trim(),
+                    CustomPrimaryColor = createPostDto.CustomPrimaryColor?.Trim(),
                     ShowDays = createPostDto.ShowDays,
                     ShowHours = createPostDto.ShowHours,
                     ShowMinutes = createPostDto.ShowMinutes,
@@ -248,78 +295,126 @@ namespace FacebookTimerPosts.Controllers
                     BackgroundImageUrl = backgroundImageUrl,
                     HasOverlay = createPostDto.HasOverlay,
                     CreatedAt = DateTime.UtcNow,
+                    UpdatedAt = null,
                     Status = PostStatus.Draft,
                     RefreshIntervalInMinutes = createPostDto.RefreshIntervalInMinutes,
-                    NextRefreshTime = createPostDto.NextRefreshTime
+                    NextRefreshTime = nextRefreshTime,
+                    FacebookPostId = null,
+                    PublishedAt = null,
+                    ScheduledFor = createPostDto.ScheduledFor
                 };
 
-                if (createPostDto.ScheduledFor != null)
+                // Update status if scheduled
+                if (createPostDto.ScheduledFor.HasValue)
                 {
-                    post.ScheduledFor = createPostDto.ScheduledFor;
                     post.Status = PostStatus.Scheduled;
                 }
 
+                // Log the post object before saving to verify all properties
+                _logger.LogInformation("Post object before saving: UserId={UserId}, FacebookPageId={FacebookPageId}, TemplateId={TemplateId}, Title={Title}",
+                    post.UserId, post.FacebookPageId, post.TemplateId, post.Title);
+
                 try
                 {
-                    await _postRepository.AddAsync(post);
-                }
-                catch (Exception ex)
-                {
-                    _logger.LogError(ex, "Error saving post to database");
-                    return StatusCode(500, "Failed to save post to database");
-                }
+                    // Save the post to database
+                    var savedPost = await _postRepository.AddAsync(post);
 
-                // Create countdown timer with error handling
-                try
-                {
-                    var countdownTimer = await _countdownTimerRepository.CreateTimerForPostAsync(post.Id);
+                    _logger.LogInformation("Post {PostId} created successfully for user {UserId}", savedPost.Id, userId);
 
-                    var postDto = new PostDto
-                    {
-                        Id = post.Id,
-                        FacebookPageId = post.FacebookPageId,
-                        TemplateId = post.TemplateId,
-                        Title = post.Title,
-                        Description = post.Description,
-                        EventDateTime = post.EventDateTime,
-                        CustomFontFamily = post.CustomFontFamily,
-                        CustomPrimaryColor = post.CustomPrimaryColor,
-                        ShowDays = post.ShowDays,
-                        ShowHours = post.ShowHours,
-                        ShowMinutes = post.ShowMinutes,
-                        ShowSeconds = post.ShowSeconds,
-                        BackgroundImageUrl = post.BackgroundImageUrl,
-                        HasOverlay = post.HasOverlay,
-                        CreatedAt = post.CreatedAt,
-                        Status = post.Status,
-                        ScheduledFor = post.ScheduledFor,
-                        RefreshIntervalInMinutes = post.RefreshIntervalInMinutes,
-                        NextRefreshTime = post.NextRefreshTime,
-                        CountdownPublicId = countdownTimer.PublicId
-                    };
-
-                    return CreatedAtAction(nameof(GetPost), new { id = post.Id }, postDto);
-                }
-                catch (Exception ex)
-                {
-                    _logger.LogError(ex, $"Error creating countdown timer for post {post.Id}");
-                    // Since the post was created but the countdown timer failed, we should clean up
+                    // Create countdown timer for the saved post
                     try
                     {
-                        await _postRepository.DeleteAsync(post.Id);
+                        var countdownTimer = await _countdownTimerRepository.CreateTimerForPostAsync(savedPost.Id);
+                        _logger.LogInformation("Countdown timer created for post {PostId} with public ID {PublicId}", savedPost.Id, countdownTimer.PublicId);
+
+                        // Create response DTO
+                        var postDto = new PostDto
+                        {
+                            Id = savedPost.Id,
+                            FacebookPageId = savedPost.FacebookPageId,
+                            TemplateId = savedPost.TemplateId,
+                            Title = savedPost.Title,
+                            Description = savedPost.Description,
+                            EventDateTime = savedPost.EventDateTime,
+                            CustomFontFamily = savedPost.CustomFontFamily,
+                            CustomPrimaryColor = savedPost.CustomPrimaryColor,
+                            ShowDays = savedPost.ShowDays,
+                            ShowHours = savedPost.ShowHours,
+                            ShowMinutes = savedPost.ShowMinutes,
+                            ShowSeconds = savedPost.ShowSeconds,
+                            BackgroundImageUrl = savedPost.BackgroundImageUrl,
+                            HasOverlay = savedPost.HasOverlay,
+                            CreatedAt = savedPost.CreatedAt,
+                            Status = savedPost.Status,
+                            ScheduledFor = savedPost.ScheduledFor,
+                            RefreshIntervalInMinutes = savedPost.RefreshIntervalInMinutes,
+                            NextRefreshTime = savedPost.NextRefreshTime,
+                            CountdownPublicId = countdownTimer.PublicId
+                        };
+
+                        return CreatedAtAction(nameof(GetPost), new { id = savedPost.Id }, postDto);
                     }
-                    catch
+                    catch (Exception timerEx)
                     {
-                        // Log but continue with the error response
-                        _logger.LogWarning($"Failed to clean up post {post.Id} after countdown timer creation failed");
+                        _logger.LogError(timerEx, "Error creating countdown timer for post {PostId}", savedPost.Id);
+
+                        // Even if countdown timer fails, return the created post
+                        var postDto = new PostDto
+                        {
+                            Id = savedPost.Id,
+                            FacebookPageId = savedPost.FacebookPageId,
+                            TemplateId = savedPost.TemplateId,
+                            Title = savedPost.Title,
+                            Description = savedPost.Description,
+                            EventDateTime = savedPost.EventDateTime,
+                            CustomFontFamily = savedPost.CustomFontFamily,
+                            CustomPrimaryColor = savedPost.CustomPrimaryColor,
+                            ShowDays = savedPost.ShowDays,
+                            ShowHours = savedPost.ShowHours,
+                            ShowMinutes = savedPost.ShowMinutes,
+                            ShowSeconds = savedPost.ShowSeconds,
+                            BackgroundImageUrl = savedPost.BackgroundImageUrl,
+                            HasOverlay = savedPost.HasOverlay,
+                            CreatedAt = savedPost.CreatedAt,
+                            Status = savedPost.Status,
+                            ScheduledFor = savedPost.ScheduledFor,
+                            RefreshIntervalInMinutes = savedPost.RefreshIntervalInMinutes,
+                            NextRefreshTime = savedPost.NextRefreshTime,
+                            CountdownPublicId = null // No timer created
+                        };
+
+                        return CreatedAtAction(nameof(GetPost), new { id = savedPost.Id }, postDto);
                     }
-                    return StatusCode(500, "Failed to create countdown timer for post");
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Error saving post to database. FacebookPageId: {FacebookPageId}, TemplateId: {TemplateId}, UserId: {UserId}",
+                        createPostDto.FacebookPageId, createPostDto.TemplateId, userId);
+
+                    // Log more details about the specific error
+                    if (ex.InnerException != null)
+                    {
+                        _logger.LogError("Inner exception: {InnerException}", ex.InnerException.Message);
+                    }
+
+                    return StatusCode(500, new
+                    {
+                        Message = "Failed to save post to database",
+                        Error = ex.Message,
+                        InnerError = ex.InnerException?.Message,
+                        FacebookPageId = createPostDto.FacebookPageId,
+                        TemplateId = createPostDto.TemplateId
+                    });
                 }
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Unhandled exception in CreatePost");
-                return StatusCode(500, "An unexpected error occurred while creating the post");
+                _logger.LogError(ex, "Unhandled exception in CreatePost: {ErrorMessage}", ex.Message);
+                return StatusCode(500, new
+                {
+                    Message = "An unexpected error occurred while creating the post",
+                    Error = ex.Message
+                });
             }
         }
 
@@ -407,25 +502,41 @@ namespace FacebookTimerPosts.Controllers
             {
                 var userId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
 
-                // Get the post
+                // Get the post with related data
                 var post = await _postRepository.GetByIdAsync(id);
                 if (post == null || post.UserId != userId)
                 {
                     return NotFound("Post not found");
                 }
 
-                // Get page access token
-                var pageAccessToken = await _facebookPageRepository.GetPageAccessTokenAsync(post.FacebookPageId);
-                if (string.IsNullOrEmpty(pageAccessToken))
+                // Verify post can be published
+                if (post.Status == PostStatus.Published)
                 {
-                    return BadRequest("Facebook page access token not found");
+                    return BadRequest(new { success = false, errorMessage = "Post is already published" });
                 }
 
-                // Publish to Facebook
-                var facebookPostId = await _facebookService.PublishPostAsync(post, pageAccessToken);
+                if (post.Status == PostStatus.Cancelled)
+                {
+                    return BadRequest(new { success = false, errorMessage = "Cannot publish a cancelled post" });
+                }
+
+                _logger.LogInformation($"Starting to publish post {id} for user {userId}");
+
+                // Publish to Facebook using the updated service (no need to pass pageAccessToken)
+                var publishResult = await _facebookService.PublishPostAsync(post);
+
+                if (!publishResult.Success)
+                {
+                    _logger.LogError($"Failed to publish post {id} to Facebook: {publishResult.ErrorMessage}");
+                    return StatusCode(500, new
+                    {
+                        success = false,
+                        errorMessage = publishResult.ErrorMessage ?? "Failed to publish post to Facebook"
+                    });
+                }
 
                 // Update the post record
-                post.FacebookPostId = facebookPostId.PostId;
+                post.FacebookPostId = publishResult.PostId;
                 post.Status = PostStatus.Published;
                 post.PublishedAt = DateTime.UtcNow;
 
@@ -437,12 +548,23 @@ namespace FacebookTimerPosts.Controllers
 
                 await _postRepository.UpdateAsync(post);
 
-                return Ok(new { success = true, facebookPostId });
+                _logger.LogInformation($"Post {id} published successfully with Facebook post ID: {publishResult.PostId}");
+
+                return Ok(new
+                {
+                    success = true,
+                    facebookPostId = publishResult.PostId,
+                    message = "Post published successfully to Facebook with countdown image!"
+                });
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error publishing post");
-                return StatusCode(500, new { success = false, errorMessage = ex.Message });
+                _logger.LogError(ex, $"Unhandled error publishing post {id}");
+                return StatusCode(500, new
+                {
+                    success = false,
+                    errorMessage = "An unexpected error occurred while publishing the post. Please try again."
+                });
             }
         }
 

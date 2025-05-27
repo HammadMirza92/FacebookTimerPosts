@@ -8,23 +8,29 @@ namespace FacebookTimerPosts.Services.Repository
     public class FacebookService : IFacebookService
     {
         private readonly IFacebookPageRepository _facebookPageRepository;
+        private readonly ITemplateRepository _templateRepository;
+        private readonly IImageGenerationService _imageGenerationService;
         private readonly IHttpClientFactory _httpClientFactory;
         private readonly IConfiguration _configuration;
         private readonly ILogger<FacebookService> _logger;
 
         public FacebookService(
             IFacebookPageRepository facebookPageRepository,
+            ITemplateRepository templateRepository,
+            IImageGenerationService imageGenerationService,
             IHttpClientFactory httpClientFactory,
             IConfiguration configuration,
             ILogger<FacebookService> logger)
         {
             _facebookPageRepository = facebookPageRepository;
+            _templateRepository = templateRepository;
+            _imageGenerationService = imageGenerationService;
             _httpClientFactory = httpClientFactory;
             _configuration = configuration;
             _logger = logger;
         }
 
-        public async Task<(bool Success, string PostId, string ErrorMessage)> PublishPostAsync(Post post, string imageUrl)
+        public async Task<FacebookPostResult> PublishPostAsync(Post post, string imageUrl = null)
         {
             try
             {
@@ -32,39 +38,66 @@ namespace FacebookTimerPosts.Services.Repository
                 var page = await _facebookPageRepository.GetByIdAsync(post.FacebookPageId);
                 if (page == null)
                 {
-                    return (false, null, "Facebook page not found");
+                    return FacebookPostResult.CreateFailure("Facebook page not found");
                 }
 
                 // Validate token first
                 var tokenResult = await ValidatePageAccessTokenAsync(page);
                 if (!tokenResult.Success)
                 {
-                    return (false, null, tokenResult.ErrorMessage);
+                    return FacebookPostResult.CreateFailure(tokenResult.ErrorMessage);
                 }
 
                 string pageAccessToken = tokenResult.PageAccessToken;
 
+                // Get template for image generation
+                var template = await _templateRepository.GetByIdAsync(post.TemplateId);
+                if (template == null)
+                {
+                    return FacebookPostResult.CreateFailure("Template not found");
+                }
+
+                _logger.LogInformation("Starting to publish post {PostId} to Facebook page {PageId}",
+                    post.Id, page.PageId);
+
+                // Generate countdown image
+                byte[] imageBytes;
+                try
+                {
+                    imageBytes = await _imageGenerationService.GenerateCountdownImageBytesAsync(post, template);
+                    _logger.LogInformation("Generated countdown image for post {PostId}, size: {Size} bytes",
+                        post.Id, imageBytes.Length);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Failed to generate countdown image for post {PostId}", post.Id);
+                    return FacebookPostResult.CreateFailure($"Failed to generate countdown image: {ex.Message}");
+                }
+
                 // Create Facebook client
                 var client = _httpClientFactory.CreateClient("FacebookGraph");
 
+                // Upload image to Facebook and get attachment ID
+                string attachmentId;
+                try
+                {
+                    var imageUploadResult = await UploadImageBytesAsync(page.PageId, imageBytes, pageAccessToken);
+                    if (!imageUploadResult.Success)
+                    {
+                        return FacebookPostResult.CreateFailure($"Failed to upload image: {imageUploadResult.ErrorMessage}");
+                    }
+                    attachmentId = imageUploadResult.AttachmentId;
+                    _logger.LogInformation("Uploaded image to Facebook for post {PostId}, attachment ID: {AttachmentId}",
+                        post.Id, attachmentId);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Failed to upload image for post {PostId}", post.Id);
+                    return FacebookPostResult.CreateFailure($"Failed to upload image: {ex.Message}");
+                }
+
                 // Build the post content
                 string postContent = $"{post.Title}\n\n{post.Description}\n\nEvent Date: {post.EventDateTime:g}";
-
-                // First upload the image if provided
-                string attachmentId = null;
-                if (!string.IsNullOrEmpty(imageUrl))
-                {
-                    var imageUploadResult = await UploadImageAsync(page.PageId, imageUrl, pageAccessToken);
-                    if (imageUploadResult.Success)
-                    {
-                        attachmentId = imageUploadResult.AttachmentId;
-                    }
-                    else
-                    {
-                        _logger.LogWarning("Failed to upload image: {ErrorMessage}", imageUploadResult.ErrorMessage);
-                        // Continue without image if upload fails
-                    }
-                }
 
                 // Create the post payload
                 var postData = new Dictionary<string, string>
@@ -73,7 +106,7 @@ namespace FacebookTimerPosts.Services.Repository
                     { "access_token", pageAccessToken }
                 };
 
-                // Add image attachment if available
+                // Add image attachment
                 if (!string.IsNullOrEmpty(attachmentId))
                 {
                     postData.Add("attached_media[0]", $"{{\"media_fbid\":\"{attachmentId}\"}}");
@@ -89,7 +122,7 @@ namespace FacebookTimerPosts.Services.Repository
                 {
                     var errorContent = await response.Content.ReadAsStringAsync();
                     _logger.LogError("Facebook API error: {StatusCode} - {Response}", response.StatusCode, errorContent);
-                    return (false, null, $"Failed to create post: {response.StatusCode} - {errorContent}");
+                    return FacebookPostResult.CreateFailure($"Failed to create post: {response.StatusCode} - {errorContent}");
                 }
 
                 var responseContent = await response.Content.ReadAsStringAsync();
@@ -98,15 +131,17 @@ namespace FacebookTimerPosts.Services.Repository
                 if (responseData.TryGetValue("id", out var idElement))
                 {
                     string postId = idElement.GetString();
-                    return (true, postId, null);
+                    _logger.LogInformation("Successfully published post {PostId} to Facebook with ID: {FacebookPostId}",
+                        post.Id, postId);
+                    return FacebookPostResult.CreateSuccess(postId);
                 }
 
-                return (false, null, "Post created but could not retrieve post ID");
+                return FacebookPostResult.CreateFailure("Post created but could not retrieve post ID");
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error creating Facebook post");
-                return (false, null, $"Error: {ex.Message}");
+                _logger.LogError(ex, "Error creating Facebook post for post {PostId}", post.Id);
+                return FacebookPostResult.CreateFailure($"Error: {ex.Message}");
             }
         }
 
@@ -117,9 +152,6 @@ namespace FacebookTimerPosts.Services.Repository
                 // Check if token is expired
                 if (page.TokenExpiryDate <= DateTime.UtcNow)
                 {
-                    // Try to refresh the token
-                    // This would normally use the app token to refresh user tokens
-                    // But we'll just return an error for now
                     return (false, null, "Page access token has expired. Please re-authenticate.");
                 }
 
@@ -156,6 +188,49 @@ namespace FacebookTimerPosts.Services.Repository
             }
         }
 
+        private async Task<(bool Success, string AttachmentId, string ErrorMessage)> UploadImageBytesAsync(string pageId, byte[] imageBytes, string accessToken)
+        {
+            try
+            {
+                var client = _httpClientFactory.CreateClient("FacebookGraph");
+
+                // Create multipart form data content
+                using var content = new MultipartFormDataContent();
+                using var imageContent = new ByteArrayContent(imageBytes);
+                imageContent.Headers.ContentType = MediaTypeHeaderValue.Parse("image/png");
+
+                content.Add(imageContent, "source", "countdown.png");
+                content.Add(new StringContent(accessToken), "access_token");
+                content.Add(new StringContent("false"), "published"); // Upload but don't publish yet
+
+                // Upload the image to Facebook
+                var response = await client.PostAsync($"{pageId}/photos", content);
+
+                if (!response.IsSuccessStatusCode)
+                {
+                    var errorContent = await response.Content.ReadAsStringAsync();
+                    _logger.LogError("Image upload error: {StatusCode} - {Response}", response.StatusCode, errorContent);
+                    return (false, null, $"Failed to upload image: {response.StatusCode} - {errorContent}");
+                }
+
+                var responseContent = await response.Content.ReadAsStringAsync();
+                var responseData = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(responseContent);
+
+                if (responseData.TryGetValue("id", out var idElement))
+                {
+                    string attachmentId = idElement.GetString();
+                    return (true, attachmentId, null);
+                }
+
+                return (false, null, "Failed to get attachment ID from Facebook response");
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error uploading image to Facebook");
+                return (false, null, $"Error: {ex.Message}");
+            }
+        }
+
         private async Task<(bool Success, string AttachmentId, string ErrorMessage)> UploadImageAsync(string pageId, string imageUrl, string accessToken)
         {
             try
@@ -172,37 +247,10 @@ namespace FacebookTimerPosts.Services.Repository
                 else
                 {
                     // Assume local file path
-                    imageBytes = await System.IO.File.ReadAllBytesAsync(imageUrl);
+                    imageBytes = await File.ReadAllBytesAsync(imageUrl);
                 }
 
-                // Create multipart form data content
-                using var content = new MultipartFormDataContent();
-                using var imageContent = new ByteArrayContent(imageBytes);
-                imageContent.Headers.ContentType = MediaTypeHeaderValue.Parse("image/jpeg"); // Adjust if needed
-
-                content.Add(imageContent, "source", "image.jpg");
-                content.Add(new StringContent(accessToken), "access_token");
-
-                // Upload the image to Facebook
-                var response = await client.PostAsync($"{pageId}/photos?published=false", content);
-
-                if (!response.IsSuccessStatusCode)
-                {
-                    var errorContent = await response.Content.ReadAsStringAsync();
-                    _logger.LogError("Image upload error: {StatusCode} - {Response}", response.StatusCode, errorContent);
-                    return (false, null, $"Failed to upload image: {response.StatusCode}");
-                }
-
-                var responseContent = await response.Content.ReadAsStringAsync();
-                var responseData = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(responseContent);
-
-                if (responseData.TryGetValue("id", out var idElement))
-                {
-                    string attachmentId = idElement.GetString();
-                    return (true, attachmentId, null);
-                }
-
-                return (false, null, "Failed to get attachment ID");
+                return await UploadImageBytesAsync(pageId, imageBytes, accessToken);
             }
             catch (Exception ex)
             {
