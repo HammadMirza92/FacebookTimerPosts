@@ -8,6 +8,7 @@ namespace FacebookTimerPosts.Services.IRepository
 {
     public interface IUserRepository
     {
+        // Basic user operations
         Task<User> GetUserByIdAsync(string id);
         Task<User> GetUserByEmailAsync(string email);
         Task<IdentityResult> RegisterUserAsync(User user, string password);
@@ -18,8 +19,15 @@ namespace FacebookTimerPosts.Services.IRepository
         Task LogoutAsync();
         Task UpdateLastLoginDateAsync(User user);
 
-        // Add these new methods for external authentication
-        Task<ExternalAuthResponseDto> ExternalLoginAsync(ExternalAuthDto externalAuth);
+        // Additional methods that might be useful
+        Task<IdentityResult> CreateUserAsync(User user);
+        Task<IdentityResult> UpdateUserAsync(User user);
+        Task<User> FindUserByEmailAsync(string email);
 
+        // External login support methods (for the controller to use)
+        Task<User> GetUserByLoginAsync(string loginProvider, string providerKey);
+        Task<IdentityResult> AddExternalLoginAsync(User user, UserLoginInfo loginInfo);
+        Task<IList<UserLoginInfo>> GetLoginsAsync(User user);
+        Task<bool> HasExternalLoginAsync(User user, string provider, string providerKey);
     }
 }
