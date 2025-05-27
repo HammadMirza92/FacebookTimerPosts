@@ -17,6 +17,22 @@ namespace FacebookTimerPosts.Services.Repository
 
         public async Task<IList<FacebookPage>> GetUserPagesAsync(string userId)
         {
+            // First check and update status of any expired pages
+            var now = DateTime.UtcNow;
+            var expiredPages = await _context.FacebookPages
+                .Where(p => p.UserId == userId && p.IsActive && p.TokenExpiryDate <= now)
+                .ToListAsync();
+
+            if (expiredPages.Any())
+            {
+                foreach (var page in expiredPages)
+                {
+                    page.IsActive = false;
+                    page.UpdatedAt = now;
+                }
+                await _context.SaveChangesAsync();
+            }
+
             return await _context.FacebookPages
                 .Where(p => p.UserId == userId)
                 .OrderByDescending(p => p.CreatedAt)
@@ -36,9 +52,9 @@ namespace FacebookTimerPosts.Services.Repository
 
         public async Task<FacebookPage> LinkFacebookPageAsync(string userId, string pageId, string pageName, string pageAccessToken, DateTime expiryDate)
         {
-            // Check if the page is already linked to this user
+            // Check if the page is already linked to this user based on pageId
             var existingPage = await _context.FacebookPages
-                .FirstOrDefaultAsync(p => p.PageAccessToken == pageAccessToken && p.UserId == userId);
+                .FirstOrDefaultAsync(p => p.PageId == pageId && p.UserId == userId);
 
             if (existingPage != null)
             {

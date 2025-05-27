@@ -43,15 +43,25 @@ namespace FacebookTimerPosts.Controllers
                 }
 
                 // Get the user's Facebook pages from the database
+                // This will also mark expired pages as inactive
                 var pages = await _facebookPageRepository.GetUserPagesAsync(userId);
 
-                return Ok(pages.Select(p => new {
-                    p.Id,
-                    p.PageId,
-                    p.PageName,
-                    p.IsActive,
-                    p.CreatedAt
-                }));
+                // Check if any pages are inactive due to expiration
+                bool hasExpiredPages = pages.Any(p => !p.IsActive && p.TokenExpiryDate <= DateTime.UtcNow);
+
+                var response = new
+                {
+                    Pages = pages.Select(p => new {
+                        p.Id,
+                        p.PageId,
+                        p.PageName,
+                        p.IsActive,
+                        p.CreatedAt
+                    }),
+                    Message = hasExpiredPages ? "Your facebook page is expired please relink your page" : null
+                };
+
+                return Ok(response);
             }
             catch (Exception ex)
             {
@@ -90,9 +100,10 @@ namespace FacebookTimerPosts.Controllers
                     return Ok(new { Message = "No Facebook pages found" });
                 }
 
-                // Lists to track new and existing pages
-                var linkedPages = new List<FacebookPage>();
-                int existingPagesCount = 0;
+                // Lists to track new and relinked pages
+                var newPages = new List<FacebookPage>();
+                var relinkedPages = new List<FacebookPage>();
+                int existingActivePages = 0;
 
                 foreach (JsonElement page in dataElement.EnumerateArray())
                 {
@@ -110,29 +121,33 @@ namespace FacebookTimerPosts.Controllers
                     // Only proceed if we have the required data
                     if (!string.IsNullOrEmpty(pageId) && !string.IsNullOrEmpty(accessToken))
                     {
-                        // Check if page already exists - now returns boolean
+                        // Check if page already exists
                         bool pageExists = await _facebookPageRepository.PageBelongsToUserAsync(pageId, userId);
 
-                        if (pageExists)
+                        // Set token expiry date (typically long-lived tokens last 60 days)
+                        var expiryDate = DateTime.UtcNow.AddDays(60);
+
+                        // Link or relink the page
+                        var linkedPage = await _facebookPageRepository.LinkFacebookPageAsync(
+                            userId,
+                            pageId,
+                            pageName,
+                            accessToken,
+                            expiryDate
+                        );
+
+                        // Determine if this was a new link, a relink, or an existing active page
+                        if (!pageExists)
                         {
-                            // Increment counter for existing pages
-                            existingPagesCount++;
+                            newPages.Add(linkedPage);
+                        }
+                        else if (!linkedPage.IsActive)
+                        {
+                            relinkedPages.Add(linkedPage);
                         }
                         else
                         {
-                            // Page doesn't exist, create a new link
-                            // Set token expiry date (typically long-lived tokens last 60 days)
-                            var expiryDate = DateTime.UtcNow.AddDays(60);
-
-                            var linkedPage = await _facebookPageRepository.LinkFacebookPageAsync(
-                                userId,
-                                pageId,
-                                pageName,
-                                accessToken,
-                                expiryDate
-                            );
-
-                            linkedPages.Add(linkedPage);
+                            existingActivePages++;
                         }
                     }
                 }
@@ -142,15 +157,19 @@ namespace FacebookTimerPosts.Controllers
 
                 // Prepare the response message based on what happened
                 string message;
-                if (linkedPages.Count > 0 && existingPagesCount > 0)
+                if (newPages.Count > 0 && relinkedPages.Count > 0)
                 {
-                    message = $"{linkedPages.Count} new page(s) linked and {existingPagesCount} page(s) already exist";
+                    message = $"{newPages.Count} new page(s) linked and {relinkedPages.Count} page(s) relinked";
                 }
-                else if (linkedPages.Count > 0)
+                else if (newPages.Count > 0)
                 {
-                    message = $"{linkedPages.Count} page(s) successfully linked to your account";
+                    message = $"{newPages.Count} page(s) successfully linked to your account";
                 }
-                else if (existingPagesCount > 0)
+                else if (relinkedPages.Count > 0)
+                {
+                    message = $"{relinkedPages.Count} page(s) successfully relinked to your account";
+                }
+                else if (existingActivePages > 0)
                 {
                     message = "All pages are already linked to your account";
                 }
@@ -163,8 +182,9 @@ namespace FacebookTimerPosts.Controllers
                 return Ok(new
                 {
                     Message = message,
-                    NewPagesCount = linkedPages.Count,
-                    ExistingPagesCount = existingPagesCount,
+                    NewPagesCount = newPages.Count,
+                    RelinkedPagesCount = relinkedPages.Count,
+                    ExistingPagesCount = existingActivePages,
                     Pages = allUserPages.Select(p => new {
                         p.Id,
                         p.PageId,
@@ -214,46 +234,7 @@ namespace FacebookTimerPosts.Controllers
                 return StatusCode(500, $"Error unlinking Facebook page: {ex.Message}");
             }
         }
-        [HttpPost]
-        public async Task<IActionResult> CreatePostAsync(string pageId, string pageAccessToken, PostContent postContent)
-        {
-            try
-            {
-                var requestData = new Dictionary<string, string>
-                {
-                    ["message"] = postContent.Message
-                };
-
-                // Add optional parameters if they exist
-                if (!string.IsNullOrEmpty(postContent.Link))
-                {
-                    requestData.Add("link", postContent.Link);
-                }
-
-                if (!string.IsNullOrEmpty(postContent.ImageUrl))
-                {
-                    // For image posts, a different endpoint might be required
-                    // This is a simplified approach
-                    requestData.Add("url", postContent.ImageUrl);
-                }
-
-                // Add access token
-                requestData.Add("access_token", pageAccessToken);
-
-                var content = new FormUrlEncodedContent(requestData);
-                var response = await _httpClient.PostAsync($"{_graphApiVersion}/{pageId}/feed", content);
-
-                response.EnsureSuccessStatusCode();
-
-                var responseContent = await response.Content.ReadFromJsonAsync<CreatePostResponse>();
-                return Ok(new { PostId = responseContent?.Id });
-            }
-            catch (Exception ex)
-            {
-                return StatusCode(500, $"Error creating post: {ex.Message}");
-            }
-        }
-
+       
         // Helper classes for serialization/deserialization
         public class FacebookPageResponse
         {
