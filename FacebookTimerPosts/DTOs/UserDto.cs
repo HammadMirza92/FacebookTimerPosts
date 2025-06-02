@@ -9,6 +9,9 @@
         public DateTime RegistrationDate { get; set; }
         public DateTime? LastLoginDate { get; set; }
         public bool IsActive { get; set; }
+        public string? PhoneNumber { get; set; }
+        public string? PhotoURL { get; set; }
+        public bool? EmailConfirmed { get; set; }
         public UserSubscriptionDto CurrentSubscription { get; set; }
     }
 }

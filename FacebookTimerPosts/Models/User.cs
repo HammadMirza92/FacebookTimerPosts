@@ -14,6 +14,10 @@ namespace FacebookTimerPosts.Models
         public virtual ICollection<UserSubscription> UserSubscriptions { get; set; }
         public virtual ICollection<FacebookPage> FacebookPages { get; set; }
         public virtual ICollection<Post> Posts { get; set; }
+        public string? PhotoURL { get; set; }
+        public string? Bio { get; set; }
+        public string? Website { get; set; }
+        public string? Location { get; set; }
 
         public User()
         {

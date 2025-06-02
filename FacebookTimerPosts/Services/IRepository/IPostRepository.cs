@@ -16,5 +16,6 @@ namespace FacebookTimerPosts.Services.IRepository
         Task<IList<Post>> GetDueScheduledPosts(DateTime now);
         Task<IList<Post>> GetPostsDueForRefresh(DateTime now);
         Task UpdatePostRefreshAsync(int id, string newFacebookPostId, DateTime nextRefreshTime);
+
     }
 }
