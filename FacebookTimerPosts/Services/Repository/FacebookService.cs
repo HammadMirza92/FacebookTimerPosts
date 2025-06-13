@@ -167,7 +167,7 @@ namespace FacebookTimerPosts.Services.Repository
                 {
                     var errorContent = await response.Content.ReadAsStringAsync();
                     _logger.LogError("Token validation error: {StatusCode} - {Response}", response.StatusCode, errorContent);
-                    return (false, null, "Invalid page access token");
+                    return (false, null, "Invalid page access token; Pleas link your page again");
                 }
 
                 var responseContent = await response.Content.ReadAsStringAsync();
@@ -181,7 +181,7 @@ namespace FacebookTimerPosts.Services.Repository
                     return (true, page.PageAccessToken, null);
                 }
 
-                return (false, null, "Invalid page access token");
+                return (false, null, "Invalid page access token; Pleas link your page again");
             }
             catch (Exception ex)
             {

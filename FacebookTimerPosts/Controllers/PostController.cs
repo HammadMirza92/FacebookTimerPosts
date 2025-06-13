@@ -180,7 +180,7 @@ namespace FacebookTimerPosts.Controllers
             return Ok(postDto);
         }
 
-       [HttpPost]
+        [HttpPost]
         public async Task<IActionResult> CreatePost([FromBody] CreatePostDto createPostDto)
         {
             try
@@ -279,14 +279,22 @@ namespace FacebookTimerPosts.Controllers
                     nextRefreshTime = DateTime.UtcNow.AddMinutes(createPostDto.RefreshIntervalInMinutes.Value);
                 }
 
-                // Create the post object - DON'T SAVE TO DATABASE YET
+                // Modify description to include site URL
+                string originalDescription = createPostDto.Description?.Trim() ?? string.Empty;
+                string siteUrl = "https://localhost:4200/facebooktimerpost";
+                string descriptionWithUrl = $"{originalDescription}\n\nCheck out our countdown timer: {siteUrl}";
+
+                // Determine if the post should be published immediately
+                bool shouldPublishImmediately = !createPostDto.ScheduledFor.HasValue;
+
+                // Create the post object with initial draft status
                 var post = new Post
                 {
                     UserId = userId,
                     FacebookPageId = createPostDto.FacebookPageId,
                     TemplateId = createPostDto.TemplateId,
                     Title = createPostDto.Title?.Trim() ?? string.Empty,
-                    Description = createPostDto.Description?.Trim() ?? string.Empty,
+                    Description = descriptionWithUrl, // Use the modified description with URL
                     EventDateTime = createPostDto.EventDateTime,
                     CustomFontFamily = createPostDto.CustomFontFamily?.Trim(),
                     CustomPrimaryColor = createPostDto.CustomPrimaryColor?.Trim(),
@@ -302,83 +310,30 @@ namespace FacebookTimerPosts.Controllers
                     NextRefreshTime = nextRefreshTime,
                     FacebookPostId = null,
                     PublishedAt = null,
-                    ScheduledFor = createPostDto.ScheduledFor
+                    ScheduledFor = createPostDto.ScheduledFor,
+                    // Set initial status based on whether it's scheduled
+                    Status = createPostDto.ScheduledFor.HasValue ? PostStatus.Scheduled : PostStatus.Draft
                 };
 
                 // Set the Facebook page and template for the post object (needed for Facebook service)
                 post.FacebookPage = facebookPage;
                 post.Template = template;
 
-                // STEP 1: Try to publish to Facebook FIRST
-                _logger.LogInformation("Attempting to publish post to Facebook before saving to database");
-        
-                try
-                {
-                    var publishResult = await _facebookService.PublishPostAsync(post);
-            
-                    if (!publishResult.Success)
-                    {
-                        _logger.LogError("Failed to publish post to Facebook: {ErrorMessage}", publishResult.ErrorMessage);
-                        return BadRequest(new 
-                        { 
-                            Message = "Failed to publish post to Facebook", 
-                            Error = publishResult.ErrorMessage 
-                        });
-                    }
-
-                    _logger.LogInformation("Successfully published post to Facebook with ID: {FacebookPostId}", publishResult.PostId);
-
-                    // STEP 2: Facebook publishing succeeded, now update post object and save to database
-                    post.FacebookPostId = publishResult.PostId;
-                    post.Status = PostStatus.Published;
-                    post.PublishedAt = DateTime.UtcNow;
-
-                    // If it was scheduled, clear the schedule since it's now published
-                    if (createPostDto.ScheduledFor.HasValue)
-                    {
-                        post.ScheduledFor = null;
-                    }
-
-                    // Update NextRefreshTime if refresh interval is set
-                    if (post.RefreshIntervalInMinutes.HasValue && post.RefreshIntervalInMinutes.Value > 0)
-                    {
-                        post.NextRefreshTime = DateTime.UtcNow.AddMinutes(post.RefreshIntervalInMinutes.Value);
-                    }
-                }
-                catch (Exception ex)
-                {
-                    _logger.LogError(ex, "Exception occurred while publishing to Facebook");
-                    return BadRequest(new 
-                    { 
-                        Message = "Failed to publish post to Facebook", 
-                        Error = ex.Message 
-                    });
-                }
-
-                // STEP 3: Save to database only after successful Facebook publishing
+                // STEP 1: Save to database first with appropriate status
                 Post savedPost;
                 try
                 {
-                    _logger.LogInformation("Saving post to database after successful Facebook publishing");
+                    _logger.LogInformation("Saving post to database with initial status: {Status}", post.Status);
                     savedPost = await _postRepository.AddAsync(post);
                     _logger.LogInformation("Post {PostId} saved successfully to database", savedPost.Id);
                 }
                 catch (Exception ex)
                 {
-                    _logger.LogError(ex, "CRITICAL: Post was published to Facebook (ID: {FacebookPostId}) but failed to save to database. Manual cleanup may be required.", post.FacebookPostId);
-            
-                    // At this point, the post exists on Facebook but not in our database
-                    // You might want to attempt to delete from Facebook here, or log for manual cleanup
-                    return StatusCode(500, new
-                    {
-                        Message = "Post was published to Facebook but failed to save to database",
-                        FacebookPostId = post.FacebookPostId,
-                        Error = ex.Message,
-                        Warning = "Manual cleanup may be required"
-                    });
+                    _logger.LogError(ex, "Failed to save post to database");
+                    return BadRequest(new { Message = "Failed to save post to database", Error = ex.Message });
                 }
 
-                // STEP 4: Create countdown timer for the saved post
+                // STEP 2: Create countdown timer for the saved post
                 CountdownTimer countdownTimer = null;
                 try
                 {
@@ -391,7 +346,56 @@ namespace FacebookTimerPosts.Controllers
                     // Don't fail the entire operation if just the timer creation fails
                 }
 
-                // STEP 5: Create response DTO
+                // STEP 3: Publish to Facebook only if it's an immediate publish (not scheduled)
+                if (shouldPublishImmediately)
+                {
+                    try
+                    {
+                        _logger.LogInformation("Attempting to publish post {PostId} to Facebook", savedPost.Id);
+                        var publishResult = await _facebookService.PublishPostAsync(savedPost);
+
+                        if (!publishResult.Success)
+                        {
+                            _logger.LogError("Failed to publish post to Facebook: {ErrorMessage}", publishResult.ErrorMessage);
+                            // Don't delete the post, but return error
+                            return BadRequest(new
+                            {
+                                Message = "Failed to publish post to Facebook",
+                                Error = publishResult.ErrorMessage,
+                                PostId = savedPost.Id
+                            });
+                        }
+
+                        _logger.LogInformation("Successfully published post to Facebook with ID: {FacebookPostId}", publishResult.PostId);
+
+                        // Update post with Facebook details
+                        savedPost.FacebookPostId = publishResult.PostId;
+                        savedPost.Status = PostStatus.Published;
+                        savedPost.PublishedAt = DateTime.UtcNow;
+
+                        // Update NextRefreshTime if refresh interval is set
+                        if (savedPost.RefreshIntervalInMinutes.HasValue && savedPost.RefreshIntervalInMinutes.Value > 0)
+                        {
+                            savedPost.NextRefreshTime = DateTime.UtcNow.AddMinutes(savedPost.RefreshIntervalInMinutes.Value);
+                        }
+
+                        // Update the post in database with Facebook info
+                        await _postRepository.UpdateAsync(savedPost);
+                        _logger.LogInformation("Updated post {PostId} with Facebook post ID {FacebookPostId}", savedPost.Id, savedPost.FacebookPostId);
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogError(ex, "Exception occurred while publishing to Facebook");
+                        return BadRequest(new
+                        {
+                            Message = "Failed to publish post to Facebook",
+                            Error = ex.Message,
+                            PostId = savedPost.Id
+                        });
+                    }
+                }
+
+                // STEP 4: Create response DTO
                 var postDto = new PostDto
                 {
                     Id = savedPost.Id,
@@ -400,7 +404,7 @@ namespace FacebookTimerPosts.Controllers
                     TemplateId = savedPost.TemplateId,
                     TemplateName = template.Name,
                     Title = savedPost.Title,
-                    Description = savedPost.Description,
+                    Description = savedPost.Description, // Return the full description with URL
                     EventDateTime = savedPost.EventDateTime,
                     CustomFontFamily = savedPost.CustomFontFamily,
                     CustomPrimaryColor = savedPost.CustomPrimaryColor,
@@ -421,8 +425,8 @@ namespace FacebookTimerPosts.Controllers
                     CountdownPublicId = countdownTimer?.PublicId
                 };
 
-                _logger.LogInformation("Post creation completed successfully. Facebook ID: {FacebookPostId}, Database ID: {DatabaseId}", 
-                    savedPost.FacebookPostId, savedPost.Id);
+                _logger.LogInformation("Post creation completed successfully. Status: {Status}, Facebook ID: {FacebookPostId}, Database ID: {DatabaseId}",
+                    savedPost.Status, savedPost.FacebookPostId, savedPost.Id);
 
                 return CreatedAtAction(nameof(GetPost), new { id = savedPost.Id }, postDto);
             }

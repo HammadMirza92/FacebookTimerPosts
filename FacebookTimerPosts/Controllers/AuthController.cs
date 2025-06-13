@@ -73,7 +73,18 @@ namespace FacebookTimerPosts.Controllers
                 });
             }
 
-            return Ok(new { message = "User registered successfully" });
+            //return Ok(new { message = "User registered successfully" });
+
+            await _userRepository.UpdateLastLoginDateAsync(user);
+
+            var userToReturn = await GetUserDto(user);
+
+            return Ok(new
+            {
+                token = GenerateJwtToken(user),
+                user = userToReturn,
+                expiresIn = 86400 // 24 hours
+            });
         }
 
         [HttpPost("login")]
